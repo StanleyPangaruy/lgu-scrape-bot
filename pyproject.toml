@@ -2,6 +2,7 @@
 name = "lgu-scrape-bot"
 version = "0.1.0"
 description = "Facebook comment extraction via Playwright GraphQL interception"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "playwright>=1.45",
