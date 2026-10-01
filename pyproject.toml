@@ -1,0 +1,19 @@
+[project]
+name = "lgu-scrape-bot"
+version = "0.1.0"
+description = "Facebook comment extraction via Playwright GraphQL interception"
+requires-python = ">=3.11"
+dependencies = [
+    "playwright>=1.45",
+]
+
+[project.scripts]
+lgu-scrape-bot = "main:run"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["main"]
+packages = ["scraper", "storage"]

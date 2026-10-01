@@ -1,0 +1,15 @@
+# Persistent browser session (cookies, tokens) — never commit
+sessions/
+
+# Exports
+*.json
+*.csv
+*.db
+*.sqlite
+!pyproject.toml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
