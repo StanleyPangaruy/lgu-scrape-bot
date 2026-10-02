@@ -33,6 +33,9 @@ python main.py --url "https://www.facebook.com/permalink.php?story_fbid=..." --o
 
 # 3. Run with specific limits
 python main.py --url "<POST_URL>" --max-comments 500
+
+# 4. Shared posts of a post + the comments under each share
+python main.py --url "<POST_URL>" --shares --output ./shares.csv
 ```
 
 Output format is picked from the `--output` extension: `.csv` (default `output.csv`, UTF-8 with BOM for Excel), `.json`, or `.db`/`.sqlite` (upserts by comment `id`).

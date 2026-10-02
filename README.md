@@ -2,7 +2,7 @@
 
 Extracts comments (and replies) from a Facebook post and saves them to CSV.
 
-It opens a real Chromium browser, logs in with your saved Facebook session, switches the post to **All comments**, expands every "View more comments" / reply thread, and captures the comment data from Facebook's network responses.
+It opens a real Chromium browser, logs in with your saved Facebook session, switches the post to **All comments** (or **Newest** when a post has no "All comments" option), expands every "View more comments" / reply thread, and captures the comment data from Facebook's network responses.
 
 ## Requirements
 
@@ -84,7 +84,21 @@ Keep the browser window open while it runs. Progress prints after each round, fo
 | `--url` | | Facebook post URL to scrape |
 | `--output` | `output.csv` | Output file. `.csv`, `.json`, or `.db`/`.sqlite` |
 | `--max-comments` | no limit | Stop after this many comments (replies count too) |
+| `--shares` | | Scrape the post's shares and the comments under each share instead (see below) |
+| `--max-shares` | no limit | With `--shares`: stop after this many shares |
 | `--session-dir` | `sessions/` | Where the browser login is stored |
+
+## Shared posts
+
+```bash
+python main.py --url "<POST_URL>" --shares --output ./shares_post1.csv
+```
+
+Opens the post's **⋯** menu → **Share history** (or the **N shares** counter if that menu item isn't there), scrolls through the list to collect every share (who shared it and what they wrote), then opens each share to read its caption and collects the comments under it, the same way as a normal run. A share is saved if it has a caption **or** comments; shares with neither are skipped. `--max-comments` applies to each share separately.
+
+Only shares your account can see are listed (Facebook hides shares made privately or to friends only).
+
+Output columns are the shared post (`share_id`, `share_author_name`, `share_text`, `share_url`, `share_comment_count`, …) followed by the comment columns from the table below, prefixed with `comment_`. There is one row per comment, plus one row for each share without comments. `.json` nests comments under each share; `.db` writes a `shares` table and a `share_comments` table linked by `share_id`.
 
 ## Output (CSV)
 
@@ -109,7 +123,7 @@ One row per comment; opens directly in Excel or Google Sheets (Filipino text and
 | --- | --- |
 | `playwright : The term 'playwright' is not recognized` | Use `python -m playwright install chromium` instead of `playwright install chromium` |
 | `No saved Facebook session. Run python main.py --login first.` | Run `python main.py --login` on this computer |
-| `Comment sort dropdown not found` / `"All comments" option not found` | Facebook's language must be **English** (Settings → Language). Otherwise it scrapes the default "Most relevant" comments only |
+| `Comment sort dropdown not found` / `Neither "All comments" nor "Newest" is offered` | Facebook's language must be **English** (Settings → Language). Otherwise it scrapes the default "Most relevant" comments only |
 | Facebook asks for a checkpoint / security check | Run `python main.py --login`, complete the check in the browser, then retry |
 | 0 comments saved | Make sure the URL opens the post itself, and that your account can see it. Facebook may have changed its data format; open an issue with the terminal output |
 | `ModuleNotFoundError: No module named 'playwright'` | Activate the venv (step 2) or rerun `pip install -e .` |
