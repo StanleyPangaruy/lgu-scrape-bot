@@ -36,6 +36,7 @@ SHARES_BUTTON = re.compile(r"^\d[\d.,]*\s*[KM]?\s+shares?$", re.I)
 MAX_IDLE_ROUNDS = 4
 # How long to wait for a clicked expander's comments to arrive over the network.
 LOAD_TIMEOUT = 10.0
+MIN_POST_DIALOG_HEIGHT = 300
 
 
 async def jitter(low: float = 1.2, high: float = 3.8) -> None:
@@ -129,7 +130,25 @@ async def _wait_for_new_comments(interceptor: CommentInterceptor, before: int) -
         await asyncio.sleep(0.5)
 
 
+async def _hover_scroll_area(page: Page) -> None:
+    """Put the cursor over the comment list, since the wheel scrolls what's under it.
+
+    Posts often open in a dialog with its own scroller; a cursor left elsewhere
+    (e.g. where the sort menu was) scrolls nothing and lazy comments never load.
+    """
+    for dialog in reversed(await page.get_by_role("dialog").all()):
+        box = await dialog.bounding_box()
+        # Skip small popovers (menus, tooltips); the post dialog is tall.
+        if box and box["height"] >= MIN_POST_DIALOG_HEIGHT:
+            await page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            return
+    viewport = page.viewport_size
+    if viewport:
+        await page.mouse.move(viewport["width"] / 2, viewport["height"] / 2)
+
+
 async def _scroll(page: Page) -> None:
+    await _hover_scroll_area(page)
     await page.mouse.wheel(0, random.randint(600, 1400))
     await jitter()
 
