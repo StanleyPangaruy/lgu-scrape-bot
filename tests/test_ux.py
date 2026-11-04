@@ -89,14 +89,14 @@ def test_comment_paging(browsers, conn):
     pid = add_post(conn, "https://www.facebook.com/share/p/big/", POST, [f"comment number {n}" for n in range(1, 251)])
     staff = browsers["staff"]
     first = staff.get(f"/posts/{pid}").text
-    assert first.count('<article class="comment">') == 100
+    assert first.count('<article class="comment" id="c') == 100
     assert "250 conversations" in first and "showing the first 100" in first
     assert f'href="/posts/{pid}?show=200#more-100"' in first
     second = staff.get(f"/posts/{pid}?show=200").text
-    assert second.count('<article class="comment">') == 200 and 'id="more-100"' in second
+    assert second.count('<article class="comment" id="c') == 200 and 'id="more-100"' in second
     last = staff.get(f"/posts/{pid}?show=300").text
-    assert last.count('<article class="comment">') == 250 and "Show " not in last.split("</article>")[-1]
-    assert staff.get(f"/posts/{pid}?show=junk").text.count('<article class="comment">') == 100
+    assert last.count('<article class="comment" id="c') == 250 and "Show " not in last.split("</article>")[-1]
+    assert staff.get(f"/posts/{pid}?show=junk").text.count('<article class="comment" id="c') == 100
 
 
 def test_empty_states(browsers, conn):

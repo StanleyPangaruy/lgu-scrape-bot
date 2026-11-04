@@ -12,7 +12,8 @@
 {% if user %}
 <div class="shell">
   <nav class="sidebar" aria-label="Main">
-    <div class="brand">LGU Comment Monitor</div>
+    <div class="brand"><span class="brand-place">Municipality of Lopez</span><span class="brand-name">Comment Monitor</span></div>
+    <a href="/overview" {% if section == 'overview' %}aria-current="page"{% endif %}>Overview</a>
     <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Posts</a>
     <a href="/people" {% if section == 'people' %}aria-current="page"{% endif %}>People</a>
     <a href="/keywords" {% if section == 'keywords' %}aria-current="page"{% endif %}>Keywords</a>

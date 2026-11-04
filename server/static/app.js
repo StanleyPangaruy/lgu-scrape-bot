@@ -102,4 +102,11 @@
   }
 
   poll();
+
+  // Buttons that do something big ask first.
+  document.querySelectorAll("[data-confirm]").forEach(function (button) {
+    button.addEventListener("click", function (event) {
+      if (!window.confirm(button.dataset.confirm)) event.preventDefault();
+    });
+  });
 })();

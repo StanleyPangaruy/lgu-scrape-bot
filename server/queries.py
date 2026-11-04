@@ -54,9 +54,17 @@ def has_details(row: Any) -> bool:
 
 
 FACEBOOK_HOSTS = {"facebook.com", "www.facebook.com", "m.facebook.com", "web.facebook.com"}
-# Extra columns every comment query selects so comment_link() can build a link.
-LINK_COLUMNS = "pc.legacy_fbid AS parent_legacy, p.url AS post_url"
-LINK_JOIN = "LEFT JOIN comments pc ON pc.id = c.parent_id"
+# Extra columns every comment query selects: what comment_link() needs to build a
+# link, the comment's short id (rid, for URLs), and its sentiment.
+COMMENT_COLUMNS = (
+    "pc.legacy_fbid AS parent_legacy, p.url AS post_url, c.rowid AS rid, "
+    "cl.label AS label, cl.corrected AS corrected, s.reason AS reason, s.model AS label_model"
+)
+COMMENT_JOINS = (
+    "LEFT JOIN comments pc ON pc.id = c.parent_id "
+    "LEFT JOIN comment_labels cl ON cl.comment_id = c.id "
+    "LEFT JOIN comment_sentiment s ON s.comment_id = c.id"
+)
 
 
 def _facebook_url(url: str | None) -> str | None:
@@ -141,9 +149,12 @@ def list_posts(conn: sqlite3.Connection, search: str = "", sort: str = DEFAULT_P
     return conn.execute(
         f"""
         SELECT p.*, COUNT(c.id) AS stored_comments,
+               SUM(cl.label = 'supportive') AS n_supportive, SUM(cl.label = 'against') AS n_against,
+               SUM(cl.label = 'neutral') AS n_neutral, SUM(cl.label = 'question') AS n_question,
                (SELECT status FROM jobs j WHERE j.post_id = p.id
                   AND j.status IN ('queued', 'running') LIMIT 1) AS job_status
         FROM posts p LEFT JOIN comments c ON c.post_id = p.id
+        LEFT JOIN comment_labels cl ON cl.comment_id = c.id
         WHERE {where}
         GROUP BY p.id
         ORDER BY {order}, p.added_at DESC, p.id DESC
@@ -181,8 +192,14 @@ def get_post(conn: sqlite3.Connection, post_id: int) -> sqlite3.Row | None:
     return conn.execute(
         """
         SELECT p.*, COUNT(c.id) AS stored_comments,
-               SUM(c.parent_id IS NULL) AS top_level
+               SUM(c.parent_id IS NULL) AS top_level,
+               SUM(cl.label = 'supportive') AS n_supportive, SUM(cl.label = 'against') AS n_against,
+               SUM(cl.label = 'neutral') AS n_neutral, SUM(cl.label = 'question') AS n_question,
+               MAX(ps.summary) AS summary, MAX(ps.issues) AS summary_issues,
+               MAX(ps.created_at) AS summary_at
         FROM posts p LEFT JOIN comments c ON c.post_id = p.id
+        LEFT JOIN comment_labels cl ON cl.comment_id = c.id
+        LEFT JOIN post_summaries ps ON ps.post_id = p.id
         WHERE p.id = ? GROUP BY p.id
         """,
         (post_id,),
@@ -232,6 +249,7 @@ def post_comments(
     keyword_id: int | None = None,
     hits_only: bool = False,
     order: str = DEFAULT_COMMENT_ORDER,
+    label: str = "",
 ) -> tuple[list[CommentNode], bool]:
     """Comments of a post. Without filters: threads (replies under their
     comment, oldest first), the threads in the chosen order. With a filter: a
@@ -242,14 +260,19 @@ def post_comments(
         clauses.append("(c.text LIKE ? ESCAPE '\\' OR c.author_name LIKE ? ESCAPE '\\')")
         pattern = f"%{_escape_like(search)}%"
         params += [pattern, pattern]
+    if label == "none":
+        clauses.append("cl.label IS NULL")
+    elif label:
+        clauses.append("cl.label = ?")
+        params.append(label)
     rows = conn.execute(
-        f"SELECT c.*, {LINK_COLUMNS} FROM comments c JOIN posts p ON p.id = c.post_id {LINK_JOIN} "
+        f"SELECT c.*, {COMMENT_COLUMNS} FROM comments c JOIN posts p ON p.id = c.post_id {COMMENT_JOINS} "
         f"WHERE {' AND '.join(clauses)} "
         "ORDER BY COALESCE(c.created_time, 0), c.id",
         params,
     ).fetchall()
 
-    filtered = bool(search) or keyword_id is not None or hits_only
+    filtered = bool(search) or keyword_id is not None or hits_only or bool(label)
     nodes = []
     for r in rows:
         ids = hits.get(r["id"], [])
@@ -311,8 +334,10 @@ def author_summary(conn: sqlite3.Connection, author: Author) -> sqlite3.Row | No
         f"""
         SELECT MAX(c.author_name) AS name, MAX(c.author_url) AS url, COUNT(*) AS comments,
                COUNT(DISTINCT c.post_id) AS posts, COALESCE(SUM(c.reaction_count), 0) AS reactions,
-               MIN(c.created_time) AS first_at, MAX(c.created_time) AS last_at
-        FROM comments c WHERE {where}
+               MIN(c.created_time) AS first_at, MAX(c.created_time) AS last_at,
+               SUM(cl.label = 'supportive') AS n_supportive, SUM(cl.label = 'against') AS n_against,
+               SUM(cl.label = 'neutral') AS n_neutral, SUM(cl.label = 'question') AS n_question
+        FROM comments c LEFT JOIN comment_labels cl ON cl.comment_id = c.id WHERE {where}
         """,
         params,
     ).fetchone()
@@ -323,9 +348,9 @@ def author_comments(conn: sqlite3.Connection, author: Author) -> list[sqlite3.Ro
     where, params = author.where()
     return conn.execute(
         f"""
-        SELECT c.*, p.text AS post_text, p.page_name AS post_page, p.source_url AS post_link, {LINK_COLUMNS},
+        SELECT c.*, p.text AS post_text, p.page_name AS post_page, p.source_url AS post_link, {COMMENT_COLUMNS},
                (SELECT GROUP_CONCAT(h.keyword_id) FROM keyword_hits h WHERE h.comment_id = c.id) AS keyword_ids
-        FROM comments c JOIN posts p ON p.id = c.post_id {LINK_JOIN}
+        FROM comments c JOIN posts p ON p.id = c.post_id {COMMENT_JOINS}
         WHERE {where}
         ORDER BY COALESCE(c.created_time, 0) DESC, c.id
         """,
@@ -341,8 +366,11 @@ def top_commenters(conn: sqlite3.Connection, filters: Filters, limit: int = 50) 
                MAX(c.author_id) AS author_id,
                MAX(c.author_name) AS name, MAX(c.author_url) AS url,
                COUNT(*) AS comments, COUNT(DISTINCT c.post_id) AS posts,
-               COALESCE(SUM(c.reaction_count), 0) AS reactions
+               COALESCE(SUM(c.reaction_count), 0) AS reactions,
+               SUM(cl.label = 'supportive') AS n_supportive, SUM(cl.label = 'against') AS n_against,
+               SUM(cl.label = 'neutral') AS n_neutral, SUM(cl.label = 'question') AS n_question
         FROM comments c JOIN posts p ON p.id = c.post_id
+        LEFT JOIN comment_labels cl ON cl.comment_id = c.id
         WHERE {where} AND (c.author_id IS NOT NULL OR c.author_name IS NOT NULL)
         GROUP BY who
         ORDER BY comments DESC, reactions DESC, name
@@ -356,8 +384,8 @@ def most_reacted(conn: sqlite3.Connection, filters: Filters, limit: int = 20) ->
     where, params = filters.where()
     return conn.execute(
         f"""
-        SELECT c.*, p.text AS post_text, p.page_name AS post_page, p.source_url AS post_link, {LINK_COLUMNS}
-        FROM comments c JOIN posts p ON p.id = c.post_id {LINK_JOIN}
+        SELECT c.*, p.text AS post_text, p.page_name AS post_page, p.source_url AS post_link, {COMMENT_COLUMNS}
+        FROM comments c JOIN posts p ON p.id = c.post_id {COMMENT_JOINS}
         WHERE {where} AND c.reaction_count > 0
         ORDER BY c.reaction_count DESC, c.created_time DESC
         LIMIT ?
@@ -387,12 +415,168 @@ def keyword_comments(
     where, params = filters.where()
     return conn.execute(
         f"""
-        SELECT c.*, p.text AS post_text, p.page_name AS post_page, p.source_url AS post_link, {LINK_COLUMNS}
+        SELECT c.*, p.text AS post_text, p.page_name AS post_page, p.source_url AS post_link, {COMMENT_COLUMNS}
         FROM keyword_hits h JOIN comments c ON c.id = h.comment_id
-        JOIN posts p ON p.id = c.post_id {LINK_JOIN}
+        JOIN posts p ON p.id = c.post_id {COMMENT_JOINS}
         WHERE h.keyword_id = ? AND {where}
         ORDER BY c.created_time DESC
         LIMIT ?
         """,
         (keyword_id, *params, limit),
     ).fetchall()
+
+
+# --- Sentiment ---------------------------------------------------------------------
+
+SENTIMENTS = ("supportive", "against", "neutral", "question")
+
+
+def sentiment_counts(row: Any) -> dict[str, int]:
+    """Label counts from a row with n_supportive / n_against / n_neutral / n_question."""
+    return {k: int(row[f"n_{k}"] or 0) for k in SENTIMENTS}
+
+
+def lean(counts: dict[str, int]) -> str | None:
+    """How a commenter usually comments: the most common label, "mixed" on a tie."""
+    total = sum(counts.values())
+    if not total:
+        return None
+    top = max(counts.values())
+    leaders = [k for k in SENTIMENTS if counts[k] == top]
+    return leaders[0] if len(leaders) == 1 else "mixed"
+
+
+def analysis_progress(conn: sqlite3.Connection) -> sqlite3.Row:
+    return conn.execute(
+        """
+        SELECT COUNT(*) AS comments,
+               SUM(cl.label IS NOT NULL) AS labeled,
+               SUM(cl.corrected) AS corrected,
+               (SELECT COUNT(*) FROM sentiment_failures WHERE attempts >= 3) AS failed
+        FROM comments c JOIN comment_labels cl ON cl.comment_id = c.id
+        """
+    ).fetchone()
+
+
+def usage_since(conn: sqlite3.Connection, since: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT model, COUNT(*) AS calls, SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens,
+               SUM(cache_read_tokens) AS cache_read, SUM(cache_write_tokens) AS cache_write
+        FROM api_usage WHERE at >= ? GROUP BY model
+        """,
+        (since,),
+    ).fetchall()
+
+
+# --- Overview (the mayor's page) ---------------------------------------------------
+
+
+def window_counts(conn: sqlite3.Connection, start: int | None, end: int | None, page: str) -> dict[str, Any]:
+    """Comments posted in [start, end) and their labels; open bounds mean no limit."""
+    clauses, params = ["1"], []
+    if start is not None:
+        clauses.append("c.created_time >= ?")
+        params.append(start)
+    if end is not None:
+        clauses.append("c.created_time < ?")
+        params.append(end)
+    if page:
+        clauses.append("p.page_name = ?")
+        params.append(page)
+    row = conn.execute(
+        f"""
+        SELECT COUNT(*) AS comments, COUNT(DISTINCT c.post_id) AS posts, SUM(cl.label IS NOT NULL) AS labeled,
+               SUM(cl.label = 'supportive') AS n_supportive, SUM(cl.label = 'against') AS n_against,
+               SUM(cl.label = 'neutral') AS n_neutral, SUM(cl.label = 'question') AS n_question
+        FROM comments c JOIN posts p ON p.id = c.post_id LEFT JOIN comment_labels cl ON cl.comment_id = c.id
+        WHERE {' AND '.join(clauses)}
+        """,
+        params,
+    ).fetchone()
+    return {"comments": row["comments"] or 0, "posts": row["posts"] or 0, "labeled": row["labeled"] or 0,
+            **sentiment_counts(row)}
+
+
+def share(counts: dict[str, Any], label: str) -> int | None:
+    """Percentage of analyzed comments with this label (None when nothing is analyzed)."""
+    labeled = counts["labeled"]
+    return round(100 * counts[label] / labeled) if labeled else None
+
+
+def weekly_sentiment(
+    conn: sqlite3.Connection, week_starts: list[int], page: str
+) -> list[dict[str, Any]]:
+    """Label counts per week. week_starts: ascending Unix times; each week runs to the next."""
+    if not week_starts:
+        return []
+    bounds = week_starts + [week_starts[-1] + 7 * 86400]
+    clauses, params = ["c.created_time >= ?", "c.created_time < ?"], [bounds[0], bounds[-1]]
+    if page:
+        clauses.append("p.page_name = ?")
+        params.append(page)
+    weeks = [{"start": s, **{k: 0 for k in SENTIMENTS}, "total": 0} for s in week_starts]
+    for r in conn.execute(
+        f"""
+        SELECT c.created_time, cl.label FROM comments c JOIN posts p ON p.id = c.post_id
+        JOIN comment_labels cl ON cl.comment_id = c.id
+        WHERE cl.label IS NOT NULL AND {' AND '.join(clauses)}
+        """,
+        params,
+    ):
+        for i in range(len(week_starts)):
+            if bounds[i] <= r["created_time"] < bounds[i + 1]:
+                weeks[i][r["label"]] += 1
+                weeks[i]["total"] += 1
+                break
+    return weeks
+
+
+def posts_needing_attention(
+    conn: sqlite3.Connection, since: int | None, page: str, limit: int = 5, minimum: int = 3
+) -> list[sqlite3.Row]:
+    """Posts with the most "against" comments in the window."""
+    clauses, params = ["1"], []
+    if since is not None:
+        clauses.append("c.created_time >= ?")
+        params.append(since)
+    if page:
+        clauses.append("p.page_name = ?")
+        params.append(page)
+    return conn.execute(
+        f"""
+        SELECT p.id, p.text, p.page_name, p.source_url, MAX(ps.summary) AS summary,
+               COUNT(*) AS comments, SUM(cl.label IS NOT NULL) AS labeled,
+               SUM(cl.label = 'against') AS n_against, SUM(cl.label = 'supportive') AS n_supportive
+        FROM comments c JOIN posts p ON p.id = c.post_id
+        LEFT JOIN comment_labels cl ON cl.comment_id = c.id
+        LEFT JOIN post_summaries ps ON ps.post_id = p.id
+        WHERE {' AND '.join(clauses)}
+        GROUP BY p.id HAVING n_against >= ?
+        ORDER BY n_against DESC, comments DESC LIMIT ?
+        """,
+        (*params, minimum, limit),
+    ).fetchall()
+
+
+def top_supportive(conn: sqlite3.Connection, since: int | None, page: str, limit: int = 5) -> list[sqlite3.Row]:
+    clauses, params = ["cl.label = 'supportive'"], []
+    if since is not None:
+        clauses.append("c.created_time >= ?")
+        params.append(since)
+    if page:
+        clauses.append("p.page_name = ?")
+        params.append(page)
+    return conn.execute(
+        f"""
+        SELECT c.*, p.text AS post_text, p.page_name AS post_page, p.source_url AS post_link, {COMMENT_COLUMNS}
+        FROM comments c JOIN posts p ON p.id = c.post_id {COMMENT_JOINS}
+        WHERE {' AND '.join(clauses)}
+        ORDER BY COALESCE(c.reaction_count, 0) DESC, c.created_time DESC LIMIT ?
+        """,
+        (*params, limit),
+    ).fetchall()
+
+
+def latest_brief(conn: sqlite3.Connection, key: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM briefs WHERE key = ?", (key,)).fetchone()

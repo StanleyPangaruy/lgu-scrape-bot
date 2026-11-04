@@ -43,6 +43,7 @@ python main.py --url "<POST_URL>" --screenshot ./positive.csv   # -> screenshots
 # 6. LGU Comment Monitor website (FastAPI + Jinja2, SQLite in data/monitor.db)
 python -m server create-user admin --name "Admin" --role admin
 python -m server import-csv comments_*.csv
+python -m server compare-supportive positive_*.csv [--label]   # AI accuracy check
 python -m server serve                     # http://127.0.0.1:8000
 python -m agent --server http://127.0.0.1:8000 --token <agent token>
 
@@ -57,6 +58,9 @@ python -m pytest
 - Facebook ids must be all digits; anything else (Excel's `1.00003E+14`) is stored as unknown.
 - Every state-changing form checks the session CSRF token; roles: admin (all), staff (view + export + manage keywords), mayor (view + export).
 - `keyword_hits` is a cache of keyword matches: refresh it (`refresh_hits`) whenever comments or keywords change.
+- AI sentiment (`server/ai.py` prompts and API calls, `server/analysis.py` background worker) uses `claude-haiku-5-5` (effort `low`; `LCM_SENTIMENT_MODEL`/`LCM_SENTIMENT_EFFORT`). Labels: supportive / against / neutral / question. "Supportive" = backs the LGU measure; general thanks, advice, requests and sarcasm are not.
+- The key comes only from `ANTHROPIC_API_KEY` in the environment; never ask for it or write it to a file. Real API calls cost money: tests use a fake client, and running `compare-supportive --label` needs the user's go-ahead.
+- Read labels through the `comment_labels` view (a staff correction overrides the AI). An edited comment loses its AI label and is labeled again; corrections are kept. Every API call is recorded in `api_usage` (Settings shows the monthly cost).
 
 Output format is picked from the `--output` extension: `.csv` (default `output.csv`, UTF-8 with BOM for Excel), `.json`, or `.db`/`.sqlite` (upserts by comment `id`).
 
@@ -115,6 +119,9 @@ lgu-scrape-bot/
 │   ├── ingest.py        # Save scrapes, merge posts, import CSVs
 │   ├── jobs.py          # Job queue (queued → running → done/failed)
 │   ├── keywords.py      # Spelling-tolerant keyword matching + highlight
+│   ├── ai.py            # Claude prompts, structured output, cost per call
+│   ├── analysis.py      # Background worker: label comments, post summaries, 30-day brief
+│   ├── accuracy.py      # compare-supportive: AI labels vs hand-picked comments
 │   ├── queries.py       # Read queries for the pages
 │   ├── excel.py         # .xlsx exports (formula-injection safe)
 │   ├── templates/, static/

@@ -27,6 +27,11 @@ class Settings:
     lockout_minutes: int = 15
     # A running job whose agent has not reported for this long is put back in the queue.
     stale_job_minutes: int = 15
+    # Sentiment: the Claude model and effort level; the API key comes from ANTHROPIC_API_KEY.
+    sentiment_model: str = "claude-haiku-5-5"
+    sentiment_effort: str = "low"
+    # Run the background sentiment worker inside the website (off in tests).
+    ai_worker: bool = True
 
     @property
     def db_path(self) -> Path:
@@ -42,4 +47,7 @@ class Settings:
             data_dir=Path(os.environ.get("LCM_DATA_DIR", "data")),
             secure_cookies=_flag("LCM_SECURE_COOKIES", False),
             utc_offset_hours=int(os.environ.get("LCM_UTC_OFFSET", "8")),
+            sentiment_model=os.environ.get("LCM_SENTIMENT_MODEL", "claude-haiku-5-5").strip(),
+            sentiment_effort=os.environ.get("LCM_SENTIMENT_EFFORT", "low").strip(),
+            ai_worker=_flag("LCM_AI_WORKER", True),
         )

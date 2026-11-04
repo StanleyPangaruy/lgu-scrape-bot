@@ -74,6 +74,35 @@
   </details>
 </section>
 
+<section class="panel stack" id="ai">
+  <h2>AI sentiment</h2>
+  {% if not ai_key_set %}
+  <p class="banner">No Anthropic API key is set, so comments are not being analyzed. On the server computer, set the
+    <code>ANTHROPIC_API_KEY</code> environment variable (see the README), then restart the website.</p>
+  {% endif %}
+  <dl class="facts">
+    <dt>Model</dt><dd><code>{{ ai_model }}</code> · effort {{ ai_effort }}</dd>
+    <dt>Status</dt><dd>
+      {% if ai_worker is none %}Turned off (<code>LCM_AI_WORKER=0</code>)
+      {% else %}{{ ai_worker.message or ai_worker.state }}
+      {% if ai_worker.last_error %}<br><span class="danger-text small">Last problem ({{ ai_worker.last_error_at | ago }}): {{ ai_worker.last_error }}</span>{% endif %}
+      {% endif %}</dd>
+    {% set done = ai_progress.labeled or 0 %}
+    <dt>Comments analyzed</dt><dd>{{ '{:,}'.format(done) }} of {{ '{:,}'.format(ai_progress.comments or 0) }}
+      {% if ai_progress.corrected %} · {{ ai_progress.corrected }} corrected by staff{% endif %}
+      {% if ai_progress.failed %} · <span class="danger-text">{{ ai_progress.failed }} could not be analyzed</span>{% endif %}</dd>
+    <dt>Cost in {{ ai_month }}</dt><dd>
+      ${{ '%.2f' | format(ai_cost) }}
+      {% for u in ai_usage %}<br><span class="small muted"><code>{{ u.model }}</code>: {{ u.calls }} calls, {{ '{:,}'.format(u.input_tokens or 0) }} tokens in, {{ '{:,}'.format(u.output_tokens or 0) }} out</span>{% endfor %}
+    </dd>
+  </dl>
+  <form method="post" action="/settings/ai/reanalyze" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <span class="grow small muted">Re-analyze forgets every AI label and summary and starts over (for example after changing the model). Staff corrections are kept.</span>
+    <button type="submit" class="secondary small" data-confirm="Re-analyze every comment? This uses the API again.">Re-analyze all comments</button>
+  </form>
+</section>
+
 <section class="panel stack">
   <h2>Laptop agent</h2>
   <p class="small muted">The agent on the admin laptop uses a token to upload what it collects. A new token is shown once; copy it into the agent's settings. Revoke a token if a laptop is lost.</p>

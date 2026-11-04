@@ -146,8 +146,9 @@ def save_scrape(
     )
 
     existing = {
-        r["id"] for r in conn.execute("SELECT id FROM comments WHERE post_id = ?", (post_id,))
+        r["id"]: r["text"] for r in conn.execute("SELECT id, text FROM comments WHERE post_id = ?", (post_id,))
     }
+    edited: list[str] = []
     touched: list[str] = []
     seen: set[str] = set()
     for raw in comments:
@@ -204,6 +205,8 @@ def save_scrape(
         touched.append(cid)
         if cid in existing:
             result.updated += 1
+            if text is not None and text != existing[cid]:
+                edited.append(cid)
         else:
             result.new += 1
 
@@ -213,6 +216,14 @@ def save_scrape(
             (checked_at, post_id),
         )
     refresh_hits(conn, touched)
+    if edited:
+        # The words changed, so the AI's label may no longer fit: analyze again.
+        # A staff correction is a person's decision and is kept.
+        for start in range(0, len(edited), 500):
+            chunk = edited[start:start + 500]
+            marks = ",".join("?" * len(chunk))
+            conn.execute(f"DELETE FROM comment_sentiment WHERE comment_id IN ({marks})", chunk)
+            conn.execute(f"DELETE FROM sentiment_failures WHERE comment_id IN ({marks})", chunk)
     return result
 
 

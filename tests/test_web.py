@@ -175,7 +175,7 @@ def test_author_page_lists_their_comments_across_posts(browsers, conn):
     export = mayor.get("/people/author/export.xlsx?id=100064903410975")
     assert export.status_code == 200
     rows = list(load_workbook(io.BytesIO(export.content))["Comments"].iter_rows(min_row=2, values_only=True))
-    assert len(rows) == 3 and rows[0][4] == "colorum"
+    assert len(rows) == 3 and rows[0][4] == "Not analyzed" and rows[0][5] == "colorum"
 
 
 def test_author_page_by_name_unknown_and_unusual_names(browsers, conn):

@@ -1,0 +1,41 @@
+{# Shared pieces for showing and correcting a comment's sentiment.
+   Import with: {% from "_sentiment.html" import chip, why, correction, bar with context %} #}
+
+{% macro chip(label) -%}
+{%- if label -%}<span class="badge s-{{ label }}">{{ label_names[label] }}</span>
+{%- else -%}<span class="badge s-none" title="Not analyzed yet">Not analyzed</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro why(c) -%}
+{%- if c.corrected -%}<span class="why">Corrected by staff</span>
+{%- elif c.reason -%}<span class="why">{{ c.reason }}</span>{%- endif -%}
+{%- endmacro %}
+
+{# Staff and admin can correct a label; the mayor sees the label only. #}
+{% macro correction(c, next_url) -%}
+{% if user and user.role in ('admin', 'staff') %}
+<form method="post" action="/comments/{{ c.rid }}/label" class="correct" data-auto-submit>
+  <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+  <input type="hidden" name="next" value="{{ next_url }}">
+  <label><span class="sr-only">Correct the label</span>
+    <select name="label" aria-label="Correct the label">
+      <option value="" {% if not c.corrected %}selected{% endif %}>{% if c.corrected %}Use the AI's label{% else %}Correct…{% endif %}</option>
+      {% for key, name in label_names.items() %}
+      <option value="{{ key }}" {% if c.corrected and c.label == key %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <noscript><button type="submit" class="secondary small">Save</button></noscript>
+</form>
+{% endif %}
+{%- endmacro %}
+
+{# A stacked bar of label counts. #}
+{% macro bar(counts) -%}
+{% set total = counts.supportive + counts.against + counts.neutral + counts.question %}
+{% if total %}
+<span class="sbar" role="img" aria-label="{{ counts.supportive }} supportive, {{ counts.against }} against, {{ counts.neutral }} neutral, {{ counts.question }} questions">
+  {% for key in ('supportive', 'against', 'neutral', 'question') if counts[key] %}<span class="s-{{ key }}" style="width: {{ (100 * counts[key] / total) | round(2) }}%"></span>{% endfor %}
+</span>
+{% endif %}
+{%- endmacro %}

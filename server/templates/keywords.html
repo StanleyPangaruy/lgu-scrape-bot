@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_sentiment.html" import chip, why, correction, bar with context %}
 {% block title %}Keywords{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -87,6 +88,7 @@
     <div class="match">
       <div class="small muted"><a href="{{ author_href(r.author_id, r.author_name) }}"><strong>{{ r.author_name or 'Unknown' }}</strong></a> · {{ r.created_time | fmt_date }} · on <a href="/posts/{{ r.post_id }}">{{ post_title(r.post_text, r.post_page, r.post_link) }}</a>{% set fb = comment_link(r) %}{% if fb %} · <a class="fb-link" href="{{ fb }}" target="_blank" rel="noopener noreferrer">View on Facebook</a>{% endif %}</div>
       <p class="text clamp">{{ matcher.highlight(r.text or '') }}</p>
+      <div class="sentiment-row">{{ chip(r.label) }} {{ why(r) }}</div>
     </div>
     {% else %}
     <p class="muted">No comments mention it in this period.</p>

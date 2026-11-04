@@ -128,6 +128,73 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX audit_log_at ON audit_log(at);
     """,
+    # 2: sentiment (AI labels, staff corrections), summaries, API usage
+    """
+    CREATE TABLE comment_sentiment (
+        comment_id      TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
+        label           TEXT NOT NULL CHECK (label IN ('supportive', 'against', 'neutral', 'question')),
+        reason          TEXT,
+        model           TEXT NOT NULL,
+        prompt_version  INTEGER NOT NULL,
+        created_at      INTEGER NOT NULL
+    );
+
+    CREATE TABLE comment_corrections (
+        comment_id    TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
+        label         TEXT NOT NULL CHECK (label IN ('supportive', 'against', 'neutral', 'question')),
+        user_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        corrected_at  INTEGER NOT NULL
+    );
+
+    -- Comments the model failed on; retried a few times, then left unlabeled.
+    CREATE TABLE sentiment_failures (
+        comment_id  TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
+        attempts    INTEGER NOT NULL,
+        last_error  TEXT,
+        last_at     INTEGER NOT NULL
+    );
+
+    CREATE TABLE post_summaries (
+        post_id        INTEGER PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,
+        summary        TEXT NOT NULL,
+        issues         TEXT NOT NULL DEFAULT '[]',
+        labeled_count  INTEGER NOT NULL,
+        -- label counts the summary was written from ("supportive,against,neutral,question")
+        basis          TEXT NOT NULL,
+        model          TEXT NOT NULL,
+        created_at     INTEGER NOT NULL
+    );
+
+    CREATE TABLE briefs (
+        key         TEXT PRIMARY KEY,
+        text        TEXT NOT NULL,
+        issues      TEXT NOT NULL DEFAULT '[]',
+        basis       TEXT NOT NULL,
+        model       TEXT NOT NULL,
+        created_at  INTEGER NOT NULL
+    );
+
+    CREATE TABLE api_usage (
+        id                  INTEGER PRIMARY KEY,
+        at                  INTEGER NOT NULL,
+        purpose             TEXT NOT NULL,
+        model               TEXT NOT NULL,
+        input_tokens        INTEGER NOT NULL,
+        output_tokens       INTEGER NOT NULL,
+        cache_read_tokens   INTEGER NOT NULL DEFAULT 0,
+        cache_write_tokens  INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX api_usage_at ON api_usage(at);
+
+    -- The label everyone sees: a staff correction wins over the AI's label.
+    CREATE VIEW comment_labels AS
+        SELECT c.id AS comment_id,
+               COALESCE(k.label, s.label) AS label,
+               k.label IS NOT NULL AS corrected
+        FROM comments c
+        LEFT JOIN comment_sentiment s ON s.comment_id = c.id
+        LEFT JOIN comment_corrections k ON k.comment_id = c.id;
+    """,
 ]
 
 

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_sentiment.html" import chip, why, correction, bar with context %}
 {% block title %}{{ summary.name or 'Commenter' }}{% endblock %}
 {% block content %}
 <p><a href="/people">← People</a></p>
@@ -20,10 +21,16 @@
   <div class="stat"><div class="label">Posts commented on</div><div class="value">{{ summary.posts }}</div></div>
   <div class="stat"><div class="label">Reactions received</div><div class="value">{{ summary.reactions }}</div></div>
 </div>
+{% if counts.supportive + counts.against + counts.neutral + counts.question %}
+<div class="panel stack">
+  {{ bar(counts) }}
+  <p class="small">{% for key in ('supportive', 'against', 'neutral', 'question') %}<span class="dot s-{{ key }}" aria-hidden="true"></span>{{ label_names[key] }} {{ counts[key] }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+</div>
+{% endif %}
 
 <div class="thread">
   {% for item in comments %}{% set c = item.row %}
-  <article class="comment">
+  <article class="comment" id="c{{ c.rid }}">
     <div class="meta">
       <span>{{ c.created_time | fmt_time }}</span>
       <span>{{ c.reaction_count or 0 }} reaction{{ '' if c.reaction_count == 1 else 's' }}</span>
@@ -32,11 +39,11 @@
       {% set fb = comment_link(c) %}{% if fb %}<a class="fb-link" href="{{ fb }}" target="_blank" rel="noopener noreferrer">View on Facebook</a>{% endif %}
     </div>
     <p class="text clamp">{% if c.text %}{{ matcher.highlight(c.text) }}{% else %}<span class="muted">(no text: photo, sticker or GIF)</span>{% endif %}</p>
-    {% if item.keyword_ids %}
-    <div class="chips">
+    <div class="sentiment-row">
+      {{ chip(c.label) }} {{ why(c) }}
       {% for kid in item.keyword_ids if kid in keywords %}<span class="badge kw">{{ keywords[kid].term }}</span>{% endfor %}
+      {{ correction(c, request.url.path ~ '?' ~ request.url.query) }}
     </div>
-    {% endif %}
   </article>
   {% endfor %}
 </div>

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from server import jobs
@@ -115,6 +115,7 @@ def progress(
 
 @router.post("/jobs/{job_id}/complete")
 def complete(
+    request: Request,
     job_id: int,
     body: CompleteIn,
     agent_id: int = Depends(current_agent),
@@ -139,6 +140,9 @@ def complete(
             summary += "; same post as an existing one, merged"
         jobs.finish(conn, job_id, "done", summary)
         audit(conn, "agent", "collected post", f"post {result.post_id}: {summary}")
+    worker = request.app.state.worker
+    if worker is not None:
+        worker.wake.set()  # analyze the new comments now, not at the next idle check
     return {
         "post_id": result.post_id,
         "new": result.new,

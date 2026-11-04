@@ -25,7 +25,7 @@ def comment_id(post_id: str, n: int) -> str:
 
 @pytest.fixture
 def settings(tmp_path: Path) -> Settings:
-    s = Settings(data_dir=tmp_path / "data")
+    s = Settings(data_dir=tmp_path / "data", ai_worker=False)
     prepare_database(s)
     return s
 

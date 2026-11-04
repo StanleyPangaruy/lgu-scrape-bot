@@ -17,6 +17,8 @@ from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from server import api, web
+from server.ai import LABEL_NAMES
+from server.analysis import AnalysisWorker
 from server.auth import LoginRequired
 from server.config import Settings
 from server.db import connect, migrate, now
@@ -95,7 +97,9 @@ def make_templates(settings: Settings) -> Jinja2Templates:
         return f"/static/{path}?v={version}"
 
     templates.env.filters.update(fmt_time=fmt_time, fmt_date=fmt_date, ago=ago)
-    templates.env.globals.update(author_href=author_href, comment_link=comment_link, static_url=static_url)
+    templates.env.globals.update(
+        author_href=author_href, comment_link=comment_link, static_url=static_url, label_names=LABEL_NAMES,
+    )
     return templates
 
 
@@ -105,7 +109,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         prepare_database(settings)
-        yield
+        worker = AnalysisWorker(settings) if settings.ai_worker else None
+        app.state.worker = worker
+        if worker is not None:
+            worker.start()
+        try:
+            yield
+        finally:
+            if worker is not None:
+                worker.stop()
+                worker.join(timeout=10)
 
     app = FastAPI(
         title="LGU Comment Monitor", lifespan=lifespan,
@@ -113,6 +126,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.templates = make_templates(settings)
+    app.state.worker = None
 
     @app.middleware("http")
     async def guard(request: Request, call_next) -> Response:

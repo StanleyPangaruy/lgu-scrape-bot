@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_sentiment.html" import chip, why, correction, bar with context %}
 {% block title %}Posts{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -62,6 +63,7 @@
         <th>Post</th>
         <th>Page</th>
         <th class="num">Comments</th>
+        <th>Sentiment</th>
         <th>Posted</th>
         <th>Last checked</th>
         <th><span class="sr-only">Status</span></th>
@@ -76,6 +78,7 @@
         </td>
         <td>{{ p.page_name or '—' }}</td>
         <td class="num">{{ '{:,}'.format(p.stored_comments) }}</td>
+        <td class="sentiment-cell">{% set sc = {'supportive': p.n_supportive or 0, 'against': p.n_against or 0, 'neutral': p.n_neutral or 0, 'question': p.n_question or 0} %}{% set n = sc.supportive + sc.against + sc.neutral + sc.question %}{% if n %}{{ bar(sc) }}<span class="small muted">{{ (100 * sc.supportive / n) | round | int }}% supportive · {{ (100 * sc.against / n) | round | int }}% against</span>{% elif p.stored_comments %}<span class="small muted">Not analyzed yet</span>{% else %}<span class="small muted">—</span>{% endif %}</td>
         <td>{{ p.created_time | fmt_date }}</td>
         <td>{{ p.last_checked_at | ago if p.last_checked_at else 'not yet' }}</td>
         <td>

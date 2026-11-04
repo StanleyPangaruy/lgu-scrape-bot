@@ -175,7 +175,7 @@ python -m server serve
 | Role | Can do |
 | --- | --- |
 | Admin | Everything: add posts, re-check, keywords, accounts, agent tokens, jobs |
-| Staff | View all pages, export to Excel, add, edit and delete keywords |
+| Staff | View all pages, export to Excel, add, edit and delete keywords, correct AI labels |
 | Mayor | View all pages, export to Excel |
 
 ### Laptop agent
@@ -195,6 +195,28 @@ To collect a post, the admin pastes its link on the **Posts** page; **Re-check**
 
 The site starts with a list of local topics (colorum, gasolina, sidecar, prangkisa, …). Admin and staff can add, edit and delete keywords on the **Keywords** page. Matching ignores capitals, accents and repeated letters (`COLORUMMM` = `colorum`), counts listed spellings as the same word (`kolorum`, `culorom`), and matches whole words only (`gas` does not match `gastos`). A spelling ending in `*` also matches longer words (`pahirap*` → `pahirapan`).
 
+### AI sentiment (Claude)
+
+After each collection the website labels every new comment **Supportive**, **Against**, **Neutral** or **Question**, with a one-line reason. It then writes a short summary per post and a 30-day brief for the **Overview** page. It uses Claude Haiku: about 1,000 comments cost a few US cents. **Settings → AI sentiment** shows progress and this month's cost.
+
+- *Supportive* means backing the LGU's measure ("pabor po", "nararapat lang na ipatupad"). It still counts if the comment objects to one part of the measure. General thanks, advice, requests and sarcasm are not supportive.
+- Staff and the admin can correct any label (the **Correct…** menu under a comment). A correction overrides the AI, survives re-analysis, and updates the post summary.
+- The API key is read from the `ANTHROPIC_API_KEY` environment variable on the website computer. Without it, nothing is analyzed and the rest of the site works normally. **Never put the key in a file in this repo.**
+
+Set the key once on Windows (PowerShell), then open a **new** terminal and start the website:
+
+```powershell
+[Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "<your key>", "User")
+```
+
+On Linux, add `export ANTHROPIC_API_KEY=...` to the service's environment (not to the repo).
+
+Accuracy check: compare the AI's "supportive" with comments you picked by hand (`positive_<code>.csv` next to its `comments_<code>.csv`). `--label` first labels just those posts, which costs a few cents:
+
+```bash
+python -m server compare-supportive positive_*.csv --label
+```
+
 ### Settings (environment variables)
 
 | Variable | Default | Meaning |
@@ -202,6 +224,10 @@ The site starts with a list of local topics (colorum, gasolina, sidecar, prangki
 | `LCM_DATA_DIR` | `data` | Where the database lives |
 | `LCM_SECURE_COOKIES` | `0` | `1` when served over HTTPS (required on the internet) |
 | `LCM_UTC_OFFSET` | `8` | Hours from UTC for displayed times (Philippines = 8) |
+| `ANTHROPIC_API_KEY` | (none) | Claude API key; without it comments are not analyzed |
+| `LCM_SENTIMENT_MODEL` | `claude-haiku-5-5` | Claude model for labels and summaries |
+| `LCM_SENTIMENT_EFFORT` | `low` | Effort setting (`low`, `medium`, `high`) |
+| `LCM_AI_WORKER` | `1` | `0` turns the background analysis off |
 
 ### Tests
 
