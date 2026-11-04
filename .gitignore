@@ -1,6 +1,12 @@
 # Persistent browser session (cookies, tokens) — never commit
 sessions/
 
+# Comment screenshots (commenters' names and photos)
+screenshots/
+
+# LGU Comment Monitor database (residents' comments, accounts)
+data/
+
 # Exports
 *.json
 *.csv

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ summary.name or 'Commenter' }}{% endblock %}
+{% block content %}
+<p><a href="/people">← People</a></p>
+<div class="page-head">
+  <div>
+    <h1>{{ summary.name or 'Unknown name' }}</h1>
+    <p class="sub">
+      Comments from {{ summary.first_at | fmt_date }} to {{ summary.last_at | fmt_date }}
+      {% if profile_link %}· <a href="{{ profile_link }}" rel="noopener noreferrer" target="_blank">Facebook profile</a>{% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/people/author/export.xlsx?{{ export_query }}">Export to Excel</a>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="label">Comments</div><div class="value">{{ summary.comments }}</div></div>
+  <div class="stat"><div class="label">Posts commented on</div><div class="value">{{ summary.posts }}</div></div>
+  <div class="stat"><div class="label">Reactions received</div><div class="value">{{ summary.reactions }}</div></div>
+</div>
+
+<div class="thread">
+  {% for item in comments %}{% set c = item.row %}
+  <article class="comment">
+    <div class="meta">
+      <span>{{ c.created_time | fmt_time }}</span>
+      <span>{{ c.reaction_count or 0 }} reaction{{ '' if c.reaction_count == 1 else 's' }}</span>
+      {% if c.parent_id %}<span>reply</span>{% endif %}
+      <span>on <a href="/posts/{{ c.post_id }}">{{ post_title(c.post_text, c.post_page, c.post_link) }}</a>{% if c.post_page %} · {{ c.post_page }}{% endif %}</span>
+      {% set fb = comment_link(c) %}{% if fb %}<a class="fb-link" href="{{ fb }}" target="_blank" rel="noopener noreferrer">View on Facebook</a>{% endif %}
+    </div>
+    <p class="text clamp">{% if c.text %}{{ matcher.highlight(c.text) }}{% else %}<span class="muted">(no text: photo, sticker or GIF)</span>{% endif %}</p>
+    {% if item.keyword_ids %}
+    <div class="chips">
+      {% for kid in item.keyword_ids if kid in keywords %}<span class="badge kw">{{ keywords[kid].term }}</span>{% endfor %}
+    </div>
+    {% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endblock %}

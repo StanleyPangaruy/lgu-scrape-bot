@@ -36,7 +36,27 @@ python main.py --url "<POST_URL>" --max-comments 500
 
 # 4. Shared posts of a post + the comments under each share
 python main.py --url "<POST_URL>" --shares --output ./shares.csv
+
+# 5. Screenshot selected comments (CSV with an `id` column, e.g. a filtered scrape CSV)
+python main.py --url "<POST_URL>" --screenshot ./positive.csv   # -> screenshots/positive/
+
+# 6. LGU Comment Monitor website (FastAPI + Jinja2, SQLite in data/monitor.db)
+python -m server create-user admin --name "Admin" --role admin
+python -m server import-csv comments_*.csv
+python -m server serve                     # http://127.0.0.1:8000
+python -m agent --server http://127.0.0.1:8000 --token <agent token>
+
+# 7. Tests
+python -m pytest
 ```
+
+### LGU Comment Monitor rules
+- Only `agent/` (on the admin laptop) runs the scraper; the server never touches Facebook.
+- Comments are keyed by Facebook's comment id; collecting again upserts (never deletes). Posts merge by Facebook post id.
+- A comment id decodes to `comment:<post id>_<comment id>`; ingest drops comments whose post id differs (feed stories on the page).
+- Facebook ids must be all digits; anything else (Excel's `1.00003E+14`) is stored as unknown.
+- Every state-changing form checks the session CSRF token; roles: admin (all), staff (view + export + manage keywords), mayor (view + export).
+- `keyword_hits` is a cache of keyword matches: refresh it (`refresh_hits`) whenever comments or keywords change.
 
 Output format is picked from the `--output` extension: `.csv` (default `output.csv`, UTF-8 with BOM for Excel), `.json`, or `.db`/`.sqlite` (upserts by comment `id`).
 
@@ -79,8 +99,28 @@ lgu-scrape-bot/
 │   ├── __init__.py
 │   ├── browser.py       # Playwright browser context & anti-detection setup
 │   ├── interceptor.py   # Network listener & GraphQL payload parser
-│   └── actions.py       # Scroll, expander clicks, sort dropdown toggles
+│   ├── actions.py       # Scroll, expander clicks, sort dropdown toggles
+│   ├── collect.py       # collect_comments(): open post, sort, expand, intercept
+│   ├── post_info.py     # The post's own details (page, caption, date); comment → post id
+│   └── screenshots.py   # Match comments to their [role=article] by comment_id link; element PNGs
 ├── storage/
 │   ├── __init__.py
 │   └── exporter.py      # Format captured data to JSON/CSV/SQLite
+├── server/              # LGU Comment Monitor website
+│   ├── app.py           # FastAPI app, security headers, error pages
+│   ├── web.py           # Pages and forms
+│   ├── api.py           # Agent API (Bearer agent token)
+│   ├── auth.py          # Accounts, sessions, roles, CSRF
+│   ├── db.py            # SQLite schema migrations
+│   ├── ingest.py        # Save scrapes, merge posts, import CSVs
+│   ├── jobs.py          # Job queue (queued → running → done/failed)
+│   ├── keywords.py      # Spelling-tolerant keyword matching + highlight
+│   ├── queries.py       # Read queries for the pages
+│   ├── excel.py         # .xlsx exports (formula-injection safe)
+│   ├── templates/, static/
+│   └── cli.py           # python -m server …
+├── agent/runner.py      # python -m agent: claim job → scrape → upload
+├── tests/               # pytest
+├── data/                # monitor.db (gitignored: residents' comments)
+├── screenshots/         # Comment screenshots (gitignored: names and photos)
 └── sessions/            # Persistent browser context data (gitignored)

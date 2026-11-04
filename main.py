@@ -3,6 +3,7 @@
     python main.py --login
     python main.py --url "<POST_URL>" --output ./output.csv --max-comments 500
     python main.py --url "<POST_URL>" --shares --output ./shares.csv
+    python main.py --url "<POST_URL>" --screenshot ./positive.csv
 """
 
 from __future__ import annotations
@@ -12,22 +13,11 @@ import asyncio
 import sys
 from pathlib import Path
 
-from playwright.async_api import Page
-
-from scraper.actions import (
-    expand_all,
-    jitter,
-    open_shares_dialog,
-    scroll_shares_dialog,
-    switch_to_all_comments,
-)
+from scraper.actions import jitter, open_shares_dialog, scroll_shares_dialog
 from scraper.browser import interactive_login, is_logged_in, open_context
-from scraper.interceptor import (
-    Comment,
-    CommentInterceptor,
-    ShareInterceptor,
-    fill_share_from_page,
-)
+from scraper.collect import collect_comments, open_post
+from scraper.interceptor import ShareInterceptor, fill_share_from_page
+from scraper.screenshots import all_rendered, capture, read_targets, write_index
 from storage.exporter import export, export_shares
 
 DEFAULT_SESSION_DIR = Path("sessions")
@@ -59,12 +49,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--max-shares", type=int, default=None, help="with --shares: stop after this many shares"
     )
     parser.add_argument(
+        "--screenshot",
+        type=Path,
+        metavar="CSV",
+        help="screenshot the comments listed in CSV (needs an `id` column, e.g. a filtered "
+        "scrape CSV) instead of scraping",
+    )
+    parser.add_argument(
+        "--screenshot-dir",
+        type=Path,
+        default=None,
+        help="with --screenshot: where to save images (default: screenshots/<CSV name>/)",
+    )
+    parser.add_argument(
         "--session-dir",
         type=Path,
         default=DEFAULT_SESSION_DIR,
         help="persistent browser profile directory (default: sessions/)",
     )
     args = parser.parse_args(argv)
+    if args.screenshot and (args.shares or not args.url):
+        parser.error("--screenshot requires --url and can't be combined with --shares")
     if args.max_comments is not None and args.max_comments < 1:
         parser.error("--max-comments must be a positive number")
     if args.max_shares is not None and args.max_shares < 1:
@@ -74,34 +79,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-async def open_post(page: Page, url: str) -> None:
-    print(f"Opening {url}")
-    await page.goto(url, wait_until="domcontentloaded")
-    await jitter()
+async def screenshot_comments(url: str, ids_csv: Path, out_dir: Path, session_dir: Path) -> int:
+    """Open the post, load until every listed comment is on the page, and screenshot each one."""
+    targets = read_targets(ids_csv)
+    if not targets:
+        print(f"No comments listed in {ids_csv}.")
+        return 1
+    print(f"{len(targets)} comments to screenshot.")
 
+    async with open_context(session_dir) as context:
+        if not await is_logged_in(context):
+            print("No saved Facebook session. Run `python main.py --login` first.")
+            return 1
 
-async def collect_comments(
-    page: Page, max_comments: int | None, url: str | None = None
-) -> list[Comment]:
-    """Return all comments and replies of the post at `url`, or of the post
-    already open in `page` when `url` is None."""
-    interceptor = CommentInterceptor(max_comments=max_comments)
-    interceptor.attach(page)
-    try:
-        if url is not None:
-            await open_post(page, url)
-        await interceptor.ingest_page_scripts(page)
+        page = context.pages[0] if context.pages else await context.new_page()
+        await collect_comments(page, None, url, done=lambda: all_rendered(page, targets))
+        await capture(page, targets, out_dir)
 
-        order = await switch_to_all_comments(page)
-        if order:
-            print(f'Sorting set to "{order}".')
-        await jitter()
-
-        await expand_all(page, interceptor)
-        await interceptor.drain()
-    finally:
-        interceptor.detach(page)
-    return interceptor.results()
+    index = write_index(targets, out_dir)
+    captured = sum(t.status == "captured" for t in targets)
+    print(f"Saved {captured} of {len(targets)} screenshots to {out_dir} (list: {index})")
+    for t in targets:
+        if t.status != "captured":
+            print(f"  Not found on the page: {t.author_name}: {(t.text or '')[:60]}")
+    return 0 if captured == len(targets) else 2
 
 
 async def scrape(url: str, output: Path, max_comments: int | None, session_dir: Path) -> int:
@@ -181,6 +182,11 @@ def run(argv: list[str] | None = None) -> int:
     try:
         if args.login:
             return 0 if asyncio.run(interactive_login(args.session_dir)) else 1
+        if args.screenshot:
+            out_dir = args.screenshot_dir or Path("screenshots") / args.screenshot.stem
+            return asyncio.run(
+                screenshot_comments(args.url, args.screenshot, out_dir, args.session_dir)
+            )
         if args.shares:
             return asyncio.run(
                 scrape_shares(

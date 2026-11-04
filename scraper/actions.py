@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
+from typing import Awaitable, Callable
 
 from playwright.async_api import Locator, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -153,10 +154,17 @@ async def _scroll(page: Page) -> None:
     await jitter()
 
 
-async def expand_all(page: Page, interceptor: CommentInterceptor) -> None:
-    """Keep paginating comments and reply threads until nothing new loads."""
+async def expand_all(
+    page: Page,
+    interceptor: CommentInterceptor,
+    done: Callable[[], Awaitable[bool]] | None = None,
+) -> None:
+    """Keep paginating comments and reply threads until nothing new loads,
+    or until `done()` says everything needed is on the page."""
     idle_rounds = 0
     while not interceptor.limit_reached and idle_rounds < MAX_IDLE_ROUNDS:
+        if done is not None and await done():
+            return
         before = interceptor.count
         more = await _click_expanders(page, MORE_COMMENTS, interceptor)
         replies = await _click_expanders(page, MORE_REPLIES, interceptor)

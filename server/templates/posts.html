@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}Posts{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Posts</h1>
+    <p class="sub">Facebook posts collected so far.</p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/posts/export.xlsx">Export to Excel</a>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="label">Posts</div><div class="value">{{ '{:,}'.format(totals.posts) }}</div></div>
+  <div class="stat"><div class="label">Comments</div><div class="value">{{ '{:,}'.format(totals.comments) }}</div></div>
+  <div class="stat"><div class="label">Comments mentioning a keyword</div><div class="value">{{ '{:,}'.format(totals.keyword_comments) }}</div></div>
+</div>
+
+{% if user.is_admin %}
+<form method="post" action="/posts" class="panel stack">
+  <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+  <div class="form-row">
+    <label class="grow">Add a post: paste its Facebook link
+      <input type="url" name="link" placeholder="https://www.facebook.com/share/p/…" value="{{ link_value or '' }}" required>
+    </label>
+    <button type="submit">Collect comments</button>
+  </div>
+  {% if link_error %}<p class="error" role="alert">{{ link_error }}</p>{% endif %}
+</form>
+{% if totals.untitled %}
+<form method="post" action="/posts/recheck-untitled" class="banner form-row">
+  <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+  <span class="grow">{{ totals.untitled }} post{{ '' if totals.untitled == 1 else 's' }} have no title or page yet (imported, or not collected). Re-checking fills them in.</span>
+  <button type="submit" class="secondary small">Re-check all untitled posts</button>
+</form>
+{% endif %}
+{% endif %}
+
+<p class="banner" data-job-banner {% if active %}data-active{% else %}hidden{% endif %}>
+  <span data-job-text>{% if active %}{{ active | length }} post{% if active | length != 1 %}s{% endif %} in the queue{% endif %}</span>
+</p>
+
+<form method="get" action="/posts" class="filters" role="search" data-auto-submit>
+  <label class="grow">Search posts
+    <input type="search" name="q" value="{{ q }}" maxlength="200" placeholder="Words in the post, page name or link">
+  </label>
+  <label>Sort by
+    <select name="sort">
+      {% for key, (label, _) in sorts.items() %}<option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="secondary">Search</button>
+  {% if q %}<a class="button secondary" href="/posts{% if sort != 'posted' %}?sort={{ sort }}{% endif %}">Clear</a>{% endif %}
+</form>
+
+{% if posts %}
+<div class="panel flush">
+  <table>
+    <thead>
+      <tr>
+        <th>Post</th>
+        <th>Page</th>
+        <th class="num">Comments</th>
+        <th>Posted</th>
+        <th>Last checked</th>
+        <th><span class="sr-only">Status</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in posts %}{% set p = item.row %}
+      <tr>
+        <td>
+          <a class="title-link" href="/posts/{{ p.id }}">{{ item.title }}</a>
+          {% if not item.has_details %}<div class="small muted">Details not loaded yet</div>{% endif %}
+        </td>
+        <td>{{ p.page_name or '—' }}</td>
+        <td class="num">{{ '{:,}'.format(p.stored_comments) }}</td>
+        <td>{{ p.created_time | fmt_date }}</td>
+        <td>{{ p.last_checked_at | ago if p.last_checked_at else 'not yet' }}</td>
+        <td>
+          {% if p.job_status %}<span class="badge {{ p.job_status }}">{{ 'Collecting' if p.job_status == 'running' else 'Queued' }}</span>
+          {% elif item.is_new %}<span class="badge new" title="Added or got new comments since your last visit">New</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% elif q %}
+<div class="panel empty">
+  <p>No posts match “{{ q }}”.</p>
+  <a class="button secondary" href="/posts">Clear search</a>
+</div>
+{% else %}
+<div class="panel empty">
+  <p>No posts yet.</p>
+  <p class="muted">{% if user.is_admin %}Paste a Facebook post link above to collect its comments.{% else %}The admin adds posts; they will appear here.{% endif %}</p>
+</div>
+{% endif %}
+{% endblock %}

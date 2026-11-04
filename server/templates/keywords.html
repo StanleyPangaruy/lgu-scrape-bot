@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Keywords{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Keywords</h1>
+    <p class="sub">Words to watch in comments. Other spellings count as the same word; capitals, accents and repeated letters are ignored.</p>
+  </div>
+</div>
+
+<form method="get" action="/keywords" class="filters">
+  {% if selected %}<input type="hidden" name="k" value="{{ selected.id }}">{% endif %}
+  <label>Period
+    <select name="period">
+      {% for key, (label, _) in periods.items() %}
+      <option value="{{ key }}" {% if filters.period == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Page
+    <select name="page">
+      <option value="">All pages</option>
+      {% for name in pages %}
+      <option value="{{ name }}" {% if filters.page == name %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="secondary">Show</button>
+</form>
+
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+{% if user.can_edit_keywords %}
+<details class="panel">
+  <summary>Add a keyword</summary>
+  <form method="post" action="/keywords" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <label>Keyword
+      <input type="text" name="term" maxlength="100" required placeholder="e.g. baha">
+    </label>
+    <label class="grow">Other spellings, separated by commas
+      <input type="text" name="variants" maxlength="2000" placeholder="e.g. bahaa, flood, pagbaha">
+    </label>
+    <button type="submit">Add keyword</button>
+  </form>
+  <p class="small muted" style="margin-top: 8px">Matches whole words: “gas” does not match “gastos”. End a spelling with * to also match longer words (“pahirap*” matches “pahirapan”).</p>
+</details>
+{% endif %}
+
+<div class="grid-kw">
+  <section class="panel">
+    {% if keywords %}
+    <div class="kw-list">
+      {% for k in keywords %}
+      <a class="kw-item" href="/keywords?k={{ k.id }}&amp;period={{ filters.period | urlencode }}&amp;page={{ filters.page | urlencode }}" {% if selected and selected.id == k.id %}aria-current="true"{% endif %}>
+        <span class="top"><strong>{{ k.term }}</strong><span>{{ counts[k.id] }}</span></span>
+        <span class="bar" aria-hidden="true"><span style="width: {{ (100 * counts[k.id] / top) | round | int if top else 0 }}%"></span></span>
+        {% if k.variants %}<span class="spellings" style="display: block">{{ k.variants | join(', ') }}</span>{% endif %}
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">No keywords yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel stack">
+    {% if selected %}
+    <h2>Comments mentioning “{{ selected.term }}” · {{ counts[selected.id] }}</h2>
+    {% if user.can_edit_keywords %}
+    <details>
+      <summary>Edit spellings or delete</summary>
+      <form method="post" action="/keywords/{{ selected.id }}" class="form-row">
+        <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+        <label class="grow">Other spellings, separated by commas
+          <input type="text" name="variants" maxlength="2000" value="{{ selected.variants | join(', ') }}">
+        </label>
+        <button type="submit">Save</button>
+      </form>
+      <form method="post" action="/keywords/{{ selected.id }}/delete" style="margin-top: 10px">
+        <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+        <button type="submit" class="danger small">Delete “{{ selected.term }}”</button>
+      </form>
+    </details>
+    {% endif %}
+    {% for r in matches %}
+    <div class="match">
+      <div class="small muted"><a href="{{ author_href(r.author_id, r.author_name) }}"><strong>{{ r.author_name or 'Unknown' }}</strong></a> · {{ r.created_time | fmt_date }} · on <a href="/posts/{{ r.post_id }}">{{ post_title(r.post_text, r.post_page, r.post_link) }}</a>{% set fb = comment_link(r) %}{% if fb %} · <a class="fb-link" href="{{ fb }}" target="_blank" rel="noopener noreferrer">View on Facebook</a>{% endif %}</div>
+      <p class="text clamp">{{ matcher.highlight(r.text or '') }}</p>
+    </div>
+    {% else %}
+    <p class="muted">No comments mention it in this period.</p>
+    {% endfor %}
+    {% if matches | length == 200 %}<p class="small muted">Showing the 200 most recent.</p>{% endif %}
+    {% else %}
+    <p class="muted">Add a keyword to start tracking it.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

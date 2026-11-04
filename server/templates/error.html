@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Problem{% endblock %}
+{% block public %}
+<div class="panel stack">
+  <h1>{% if status == 403 %}Not allowed{% elif status == 404 %}Not found{% else %}Something went wrong{% endif %}</h1>
+  <p>{{ message }}</p>
+  <p><a href="/posts">Back to Posts</a></p>
+</div>
+{% endblock %}

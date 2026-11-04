@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="sub">Accounts, the laptop agent, and the activity log. Only the admin sees this page.</p>
+  </div>
+</div>
+
+<section class="panel stack">
+  <h2>Accounts</h2>
+  <div style="overflow-x: auto">
+  <table>
+    <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.display_name }}</td>
+        <td>{{ u.username }}</td>
+        <td>{{ role_labels[u.role] }}</td>
+        <td>
+          {% if not u.active %}<span class="badge failed">Turned off</span>
+          {% elif u.locked_until and u.locked_until > now %}<span class="badge failed">Locked (wrong passwords)</span>
+          {% else %}<span class="badge done">Active</span>{% endif %}
+        </td>
+        <td>
+          <details {% if reset_for == u.id %}open{% endif %}>
+            <summary>Manage</summary>
+            <form method="post" action="/settings/users/{{ u.id }}/password" class="form-row">
+              <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+              <label>New password (10+ characters)
+                <input type="password" name="password" minlength="10" maxlength="200" autocomplete="new-password" required>
+              </label>
+              <button type="submit" class="secondary small">Set password</button>
+            </form>
+            {% if reset_for == u.id and reset_error %}<p class="error" role="alert" style="margin-top: 8px">{{ reset_error }}</p>{% endif %}
+            {% if u.id != user.id %}
+            <form method="post" action="/settings/users/{{ u.id }}/active" style="margin-top: 8px">
+              <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+              <input type="hidden" name="active" value="{{ 0 if u.active else 1 }}">
+              <button type="submit" class="{{ 'danger' if u.active else 'secondary' }} small">{{ 'Turn off account' if u.active else 'Turn account back on' }}</button>
+            </form>
+            {% endif %}
+          </details>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <details {% if user_error %}open{% endif %}>
+    <summary>Add an account</summary>
+    {% if user_error %}<p class="error" role="alert">{{ user_error }}</p>{% endif %}
+    <form method="post" action="/settings/users" class="form-row" style="margin-top: 8px">
+      <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+      <label>Name
+        <input type="text" name="display_name" maxlength="80" required value="{{ form.display_name if form else '' }}">
+      </label>
+      <label>Username
+        <input type="text" name="username" maxlength="40" autocapitalize="none" required value="{{ form.username if form else '' }}">
+      </label>
+      <label>Role
+        <select name="role">
+          {% for r in roles %}<option value="{{ r }}" {% if form and form.role == r %}selected{% elif not form and r == 'staff' %}selected{% endif %}>{{ role_labels[r] }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Password (10+ characters)
+        <input type="password" name="password" minlength="10" maxlength="200" autocomplete="new-password" required>
+      </label>
+      <button type="submit">Create account</button>
+    </form>
+  </details>
+</section>
+
+<section class="panel stack">
+  <h2>Laptop agent</h2>
+  <p class="small muted">The agent on the admin laptop uses a token to upload what it collects. A new token is shown once; copy it into the agent's settings. Revoke a token if a laptop is lost.</p>
+  {% if tokens %}
+  <div style="overflow-x: auto">
+  <table>
+    <thead><tr><th>Name</th><th>Created</th><th>Last seen</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+      {% for t in tokens %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td>{{ t.created_at | fmt_date }}</td>
+        <td>{{ t.last_seen_at | ago }}</td>
+        <td>{% if t.revoked %}<span class="badge failed">Revoked</span>{% else %}<span class="badge done">Active</span>{% endif %}</td>
+        <td>{% if not t.revoked %}
+          <form method="post" action="/settings/agents/{{ t.id }}/revoke" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+            <button type="submit" class="danger small">Revoke</button>
+          </form>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <form method="post" action="/settings/agents" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <label>Name for this laptop
+      <input type="text" name="name" maxlength="80" placeholder="Admin laptop">
+    </label>
+    <button type="submit" class="secondary">Create agent token</button>
+  </form>
+</section>
+
+<section class="panel stack">
+  <h2>Activity log</h2>
+  <div style="overflow-x: auto">
+  <table>
+    <thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead>
+    <tbody>
+      {% for e in log %}
+      <tr><td class="small">{{ e.at | fmt_time }}</td><td>{{ e.actor }}</td><td>{{ e.action }}</td><td class="small">{{ e.detail or '' }}</td></tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">Nothing yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

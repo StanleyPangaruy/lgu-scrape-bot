@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% macro comment_card(node) %}
+{% set c = node.row %}
+<article class="comment">
+  <div class="meta">
+    <strong>{% if c.author_id or c.author_name %}<a href="{{ author_href(c.author_id, c.author_name) }}">{{ c.author_name or 'Unknown' }}</a>{% else %}Unknown{% endif %}</strong>
+    <span>{{ c.created_time | fmt_time }}</span>
+    <span>{{ c.reaction_count or 0 }} reaction{{ '' if c.reaction_count == 1 else 's' }}</span>
+    {% if c.reply_count %}<span>{{ c.reply_count }} repl{{ 'y' if c.reply_count == 1 else 'ies' }}</span>{% endif %}
+    {% if c.parent_id and not threaded %}<span>reply</span>{% endif %}
+    {% set fb = comment_link(c) %}{% if fb %}<a class="fb-link" href="{{ fb }}" target="_blank" rel="noopener noreferrer">View on Facebook</a>{% endif %}
+  </div>
+  <p class="text clamp">{% if c.text %}{{ matcher.highlight(c.text) }}{% else %}<span class="muted">(no text: photo, sticker or GIF)</span>{% endif %}</p>
+  {% if node.keyword_ids %}
+  <div class="chips">
+    {% for kid in node.keyword_ids if kid in keywords %}<span class="badge kw">{{ keywords[kid].term }}</span>{% endfor %}
+  </div>
+  {% endif %}
+</article>
+{% endmacro %}
+
+{% macro thread(node) %}
+{{ comment_card(node) }}
+{% if node.replies %}
+<div class="replies">
+  {% for reply in node.replies %}{{ thread(reply) }}{% endfor %}
+</div>
+{% endif %}
+{% endmacro %}
+
+{% block content %}
+<p><a href="/posts">← All posts</a></p>
+<div class="page-head">
+  <div>
+    <h1>{{ title }}</h1>
+    <p class="sub">
+      {% if page_link %}<a href="{{ page_link }}" rel="noopener noreferrer" target="_blank">{{ post.page_name }}</a>{% else %}{{ post.page_name or 'Page not known yet' }}{% endif %}
+      · Posted {{ post.created_time | fmt_date }}
+      · Last checked {{ post.last_checked_at | fmt_time if post.last_checked_at else 'not yet' }}
+      {% if post_link %}· <a href="{{ post_link }}" rel="noopener noreferrer" target="_blank">Open on Facebook</a>{% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    {% if user.is_admin %}
+    <form method="post" action="/posts/{{ post.id }}/recheck" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+      <button type="submit" class="secondary" {% if job %}disabled{% endif %}>{% if job %}{{ 'Collecting…' if job.status == 'running' else 'Re-check queued' }}{% else %}Re-check{% endif %}</button>
+    </form>
+    {% endif %}
+    <a class="button secondary" href="/posts/{{ post.id }}/export.xlsx">Export to Excel</a>
+  </div>
+</div>
+
+<p class="banner" data-job-banner data-post="{{ post.id }}" {% if job %}data-active{% else %}hidden{% endif %}>
+  <span data-job-text>{% if job %}{{ 'Collecting this post now…' if job.status == 'running' else 'This post is in the queue to be collected.' }}{% endif %}</span>
+</p>
+{% if not has_details and user.is_admin and not job %}
+<p class="banner">This post's title, page and date are not loaded yet. Click <strong>Re-check</strong> to load them.</p>
+{% endif %}
+
+<div class="stats">
+  <div class="stat"><div class="label">Comments stored</div><div class="value">{{ '{:,}'.format(post.stored_comments) }}</div></div>
+  <div class="stat"><div class="label">Top-level / replies</div><div class="value">{{ post.top_level or 0 }} / {{ post.stored_comments - (post.top_level or 0) }}</div></div>
+  <div class="stat"><div class="label">Facebook shows</div><div class="value">{{ post.fb_comment_count if post.fb_comment_count is not none else '—' }}</div></div>
+</div>
+
+{% if post.text %}
+<details class="panel">
+  <summary>Post text</summary>
+  <p class="post-text">{{ post.text }}</p>
+</details>
+{% endif %}
+
+{% if topics %}
+<nav class="topics" aria-label="Topics in this post">
+  <span class="small muted">Topics in this post:</span>
+  <a class="pill" href="{{ link(keyword='') }}" {% if not keyword %}aria-current="true"{% endif %}>All</a>
+  {% for k, n in topics %}
+  <a class="pill" href="{{ link(keyword=k.id) }}" {% if keyword == k.id %}aria-current="true"{% endif %}>{{ k.term }} <span class="count">{{ n }}</span></a>
+  {% endfor %}
+</nav>
+{% endif %}
+
+<form method="get" action="/posts/{{ post.id }}" class="filters" role="search" data-auto-submit>
+  <label class="grow">Search comments or names
+    <input type="search" name="q" value="{{ q }}" maxlength="200">
+  </label>
+  <label>Keyword
+    <select name="keyword">
+      <option value="">Any</option>
+      {% for k in keywords.values() | sort(attribute='term') %}
+      <option value="{{ k.id }}" {% if keyword == k.id %}selected{% endif %}>{{ k.term }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Sort
+    <select name="order">
+      {% for key, label in orders.items() %}<option value="{{ key }}" {% if order == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="checkbox"><span>Only comments with keywords</span>
+    <input type="checkbox" name="hits" value="true" {% if hits %}checked{% endif %}>
+  </label>
+  <button type="submit" class="secondary">Search</button>
+  {% if filtered %}<a class="button secondary" href="{{ link(q='', keyword='', hits='') }}">Clear filters</a>{% endif %}
+</form>
+
+{% if total_shown %}
+<p class="muted small">
+  {% if threaded %}{{ '{:,}'.format(total_shown) }} conversation{{ '' if total_shown == 1 else 's' }} (comments with their replies){% else %}{{ '{:,}'.format(total_shown) }} matching comment{{ '' if total_shown == 1 else 's' }}{% endif %}{% if total_shown > limit %} · showing the first {{ '{:,}'.format(limit) }}{% endif %}
+</p>
+{% endif %}
+
+<div class="thread">
+  {% for node in comments %}
+    {% if loop.index0 and loop.index0 % 100 == 0 %}<span id="more-{{ loop.index0 }}" class="anchor"></span>{% endif %}
+    {{ thread(node) }}
+  {% else %}
+  <div class="panel empty">
+    {% if filtered %}
+    <p>No comments match{% if q %} “{{ q }}”{% endif %}{% if keyword %} with the keyword “{{ keywords[keyword].term }}”{% endif %}{% if hits and not keyword %} with any keyword{% endif %}.</p>
+    <a class="button secondary" href="{{ link(q='', keyword='', hits='') }}">Clear filters</a>
+    {% elif post.last_checked_at %}
+    <p>No comments were found on this post.</p>
+    {% else %}
+    <p>This post has not been collected yet.</p>
+    <p class="muted">The agent on the admin laptop collects it soon; comments appear here when it is done.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{% if more_link %}
+<p class="more"><a class="button secondary" href="{{ more_link }}">Show {{ [100, total_shown - limit] | min }} more</a></p>
+{% endif %}
+{% endblock %}

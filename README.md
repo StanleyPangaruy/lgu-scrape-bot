@@ -1,8 +1,9 @@
 # lgu-scrape-bot
 
-Extracts comments (and replies) from a Facebook post and saves them to CSV.
+Two parts:
 
-It opens a real Chromium browser, logs in with your saved Facebook session, switches the post to **All comments** (or **Newest** when a post has no "All comments" option), expands every "View more comments" / reply thread, and captures the comment data from Facebook's network responses.
+- **LGU Comment Monitor**: a website where staff and the mayor read the comments on the Municipality's Facebook posts: keyword counts, top commenters, most-reacted comments, Excel exports. Posts are collected by an **agent** on the admin's laptop. See [LGU Comment Monitor](#lgu-comment-monitor-website--agent).
+- **The scraper** (`main.py`): extracts comments (and replies) from one Facebook post to CSV. It opens a real Chromium browser, logs in with your saved Facebook session, switches the post to **All comments** (or **Newest** when a post has no "All comments" option), expands every "View more comments" / reply thread, and captures the comment data from Facebook's network responses.
 
 ## Requirements
 
@@ -86,6 +87,8 @@ Keep the browser window open while it runs. Progress prints after each round, fo
 | `--max-comments` | no limit | Stop after this many comments (replies count too) |
 | `--shares` | | Scrape the post's shares and the comments under each share instead (see below) |
 | `--max-shares` | no limit | With `--shares`: stop after this many shares |
+| `--screenshot` | | Screenshot the comments listed in a CSV instead of scraping (see below) |
+| `--screenshot-dir` | `screenshots/<CSV name>/` | With `--screenshot`: where to save the images |
 | `--session-dir` | `sessions/` | Where the browser login is stored |
 
 ## Shared posts
@@ -99,6 +102,23 @@ Opens the post's **⋯** menu → **Share history** (or the **N shares** counter
 Only shares your account can see are listed (Facebook hides shares made privately or to friends only).
 
 Output columns are the shared post (`share_id`, `share_author_name`, `share_text`, `share_url`, `share_comment_count`, …) followed by the comment columns from the table below, prefixed with `comment_`. There is one row per comment, plus one row for each share without comments. `.json` nests comments under each share; `.db` writes a `shares` table and a `share_comments` table linked by `share_id`.
+
+## Comment screenshots
+
+```bash
+# 1. Scrape the post
+python main.py --url "<POST_URL>" --output ./comments_post1.csv
+
+# 2. Make a CSV of just the comments you want (e.g. copy comments_post1.csv to
+#    positive_post1.csv and delete the other rows). Only the `id` column is required.
+
+# 3. Screenshot them
+python main.py --url "<POST_URL>" --screenshot ./positive_post1.csv
+```
+
+Opens the post, loads comments and replies until every listed comment is on screen (it stops early once they all are), and saves each one as its own cropped PNG: name, profile photo, full text (expands "See more"), and reactions. Images go to `screenshots/positive_post1/`, named `001_<author>_<comment id>.png`, with an `index.csv` listing each comment and whether it was captured. Comments that can't be found (deleted, hidden, or no longer loading) are listed at the end of the run.
+
+The `screenshots/` folder is gitignored: the images show commenters' names and photos.
 
 ## Output (CSV)
 
@@ -127,6 +147,68 @@ One row per comment; opens directly in Excel or Google Sheets (Filipino text and
 | Facebook asks for a checkpoint / security check | Run `python main.py --login`, complete the check in the browser, then retry |
 | 0 comments saved | Make sure the URL opens the post itself, and that your account can see it. Facebook may have changed its data format; open an issue with the terminal output |
 | `ModuleNotFoundError: No module named 'playwright'` | Activate the venv (step 2) or rerun `pip install -e .` |
+
+## LGU Comment Monitor (website + agent)
+
+```text
+Admin laptop: agent ──uploads──►  Website (server)  ◄── staff, mayor, admin (browser)
+  Facebook login + scraper           accounts, database, keywords, exports
+```
+
+Only the agent touches Facebook. The website stores everything in `data/monitor.db` (gitignored).
+
+### Start the website
+
+```bash
+# First time only: create the admin account (asks for a password, 10+ characters)
+python -m server create-user admin --name "Your Name" --role admin
+
+# Optional: bring in comments scraped earlier with main.py
+python -m server import-csv comments_*.csv
+
+# Run it, then open http://127.0.0.1:8000
+python -m server serve
+```
+
+`serve` listens on this computer only. To let others on the network reach it, use `--host 0.0.0.0` (for the internet, put it behind HTTPS and set `LCM_SECURE_COOKIES=1`). Create the other accounts in **Settings** (roles: Admin, Staff, Mayor).
+
+| Role | Can do |
+| --- | --- |
+| Admin | Everything: add posts, re-check, keywords, accounts, agent tokens, jobs |
+| Staff | View all pages, export to Excel, add, edit and delete keywords |
+| Mayor | View all pages, export to Excel |
+
+### Laptop agent
+
+1. In the website: **Settings → Laptop agent → Create agent token**, and copy the token (shown once).
+2. On the laptop that is logged in to Facebook (`python main.py --login` done):
+
+```bash
+python -m agent --server http://127.0.0.1:8000 --token <TOKEN>
+```
+
+Or set `LCM_SERVER` and `LCM_AGENT_TOKEN` and run `python -m agent`. The agent checks the website for queued posts every ~15 seconds, collects them in a visible browser window, and uploads the comments. Leave it running; Ctrl+C stops it (a job in progress goes back to the queue). If Facebook logs out, the agent puts the job back, stops, and asks you to run `python main.py --login`.
+
+To collect a post, the admin pastes its link on the **Posts** page; **Re-check** on a post collects it again (new comments are added, reaction counts refreshed; nothing is deleted). Two links to the same Facebook post are merged into one.
+
+### Keywords
+
+The site starts with a list of local topics (colorum, gasolina, sidecar, prangkisa, …). Admin and staff can add, edit and delete keywords on the **Keywords** page. Matching ignores capitals, accents and repeated letters (`COLORUMMM` = `colorum`), counts listed spellings as the same word (`kolorum`, `culorom`), and matches whole words only (`gas` does not match `gastos`). A spelling ending in `*` also matches longer words (`pahirap*` → `pahirapan`).
+
+### Settings (environment variables)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LCM_DATA_DIR` | `data` | Where the database lives |
+| `LCM_SECURE_COOKIES` | `0` | `1` when served over HTTPS (required on the internet) |
+| `LCM_UTC_OFFSET` | `8` | Hours from UTC for displayed times (Philippines = 8) |
+
+### Tests
+
+```bash
+pip install -e ".[dev]"
+python -m pytest
+```
 
 ## Linux servers (no display)
 
