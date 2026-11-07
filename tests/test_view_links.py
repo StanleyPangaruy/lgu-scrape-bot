@@ -44,7 +44,7 @@ def test_view_link_opens_the_site_read_only(app, browsers, conn):
             response = mayor.get(page)
             assert response.status_code == 200, page
             assert "View only" in response.text and "Sign out" not in response.text
-            assert "Sign in with an account" in response.text
+            assert "Sign in with an account" not in response.text and "Mayor" not in response.text
         assert mayor.get(f"/posts/{pid}/export.xlsx").status_code == 200
 
         post_page = mayor.get(f"/posts/{pid}").text

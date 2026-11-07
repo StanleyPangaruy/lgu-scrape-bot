@@ -319,4 +319,3 @@ details[open] summary { margin-bottom: 10px; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 @media (max-width: 760px) { .page-head .filters { width: 100%; } .page-head .filters label { flex: 1 1 140px; } }
 .backup-list { margin: 6px 0 0; padding-left: 18px; }
-.sidebar .who .who-name { color: #fff; font-weight: 600; }
