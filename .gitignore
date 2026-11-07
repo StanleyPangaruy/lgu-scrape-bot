@@ -19,3 +19,7 @@ __pycache__/
 *.py[cod]
 .venv/
 *.egg-info/
+
+# Package build output
+build/
+dist/
