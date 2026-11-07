@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_sentiment.html" import chip, why, correction, bar with context %}
+{% block title %}People{% endblock %}
+
+{% macro filter_form(action) %}
+<form method="get" action="{{ action }}" class="filters">
+  <label>Period
+    <select name="period">
+      {% for key, (label, _) in periods.items() %}
+      <option value="{{ key }}" {% if filters.period == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Page
+    <select name="page">
+      <option value="">All pages</option>
+      {% for name in pages %}
+      <option value="{{ name }}" {% if filters.page == name %}selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <button type="submit" class="secondary">Show</button>
+</form>
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>People</h1>
+    <p class="sub">Who comments the most, and which comments get the most reactions. Counted by when the comment was posted.</p>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/people/export.xlsx?period={{ filters.period | urlencode }}&amp;page={{ filters.page | urlencode }}">Export to Excel</a>
+  </div>
+</div>
+{{ filter_form('/people') }}
+
+<div class="grid-2">
+  <section class="panel flush">
+    <h2 style="padding: 16px 16px 0">Most active commenters</h2>
+    {% if commenters %}
+    <table>
+      <thead><tr><th>#</th><th>Name</th><th class="num">Comments</th><th class="num">Posts</th><th class="num">Reactions received</th><th>Usually</th></tr></thead>
+      <tbody>
+        {% for item in commenters %}{% set r = item.row %}
+        <tr>
+          <td class="muted">{{ loop.index }}</td>
+          <td><a href="{{ author_href(r.author_id, r.name) }}">{{ r.name or 'Unknown' }}</a></td>
+          <td class="num">{{ r.comments }}</td>
+          <td class="num">{{ r.posts }}</td>
+          <td class="num">{{ r.reactions }}</td>
+          <td>{% if item.lean == 'mixed' %}<span class="badge s-neutral">Mixed</span>{% elif item.lean %}{{ chip(item.lean) }}{% else %}<span class="small muted">—</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p style="padding: 0 16px 16px" class="muted">No comments in this period.</p>{% endif %}
+  </section>
+
+  <section class="panel stack">
+    <h2>Most-reacted comments</h2>
+    {% for r in reacted %}
+    <div class="match">
+      <div class="small muted"><strong style="color: var(--ink)">{{ r.reaction_count }} reactions</strong> · <a href="{{ author_href(r.author_id, r.author_name) }}">{{ r.author_name or 'Unknown' }}</a> · {{ r.created_time | fmt_date }} · on <a href="/posts/{{ r.post_id }}">{{ post_title(r.post_text, r.post_page, r.post_link) }}</a>{% set fb = comment_link(r) %}{% if fb %} · <a class="fb-link" href="{{ fb }}" target="_blank" rel="noopener noreferrer">View on Facebook</a>{% endif %}</div>
+      <p class="text clamp">{{ r.text or '(no text: photo, sticker or GIF)' }}</p>
+      <div class="sentiment-row">{{ chip(r.label) }} {{ why(r) }}</div>
+    </div>
+    {% else %}
+    <p class="muted">No reacted comments in this period.</p>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

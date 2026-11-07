@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}View link{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>View link created</h1></div></div>
+<section class="panel stack">
+  <p>Link for <strong>{{ name }}</strong>. Copy it now: it will not be shown again.</p>
+  <p class="token">{{ link }}</p>
+  <p>Opening this link shows Overview, Posts, People and Keywords, with Excel exports, without signing in. Nothing can be changed through it.</p>
+  <p class="small muted">Send it privately, not in a group chat: anyone who has it can read residents' comments. Ask {{ name }} to bookmark the link itself. If it leaks, turn it off in Settings, View-only links, and make a new one.</p>
+  <p><a href="/settings#view-links">Back to Settings</a></p>
+</section>
+{% endblock %}

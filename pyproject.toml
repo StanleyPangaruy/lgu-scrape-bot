@@ -28,10 +28,11 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 py-modules = ["main"]
-packages = ["scraper", "storage", "server", "agent"]
+packages = ["scraper", "storage", "server", "server.templates", "server.static", "agent"]
 
 [tool.setuptools.package-data]
-server = ["templates/*.html", "static/*"]
+"server.templates" = ["*.html"]
+"server.static" = ["*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

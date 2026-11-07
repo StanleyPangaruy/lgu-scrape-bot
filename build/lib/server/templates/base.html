@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · LGU Comment Monitor</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="{{ static_url('app.css') }}">
+  <script src="{{ static_url('app.js') }}" defer></script>
+</head>
+<body>
+{% if user %}
+<div class="shell">
+  <nav class="sidebar" aria-label="Main">
+    <div class="brand"><span class="brand-place">Municipality of Lopez</span><span class="brand-name">Comment Monitor</span></div>
+    <a href="/overview" {% if section == 'overview' %}aria-current="page"{% endif %}>Overview</a>
+    <a href="/posts" {% if section == 'posts' %}aria-current="page"{% endif %}>Posts</a>
+    <a href="/people" {% if section == 'people' %}aria-current="page"{% endif %}>People</a>
+    <a href="/keywords" {% if section == 'keywords' %}aria-current="page"{% endif %}>Keywords</a>
+    {% if user.is_admin %}
+    <a href="/jobs" {% if section == 'jobs' %}aria-current="page"{% endif %}>Jobs</a>
+    <a href="/settings" {% if section == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+    {% endif %}
+    <div class="who">
+      {% if user.via_link %}
+      <span class="who-name">{{ user.display_name }}</span>
+      <span>View only</span>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+        <button type="submit" class="link-button">Sign in with an account</button>
+      </form>
+      {% else %}
+      <a href="/account" {% if section == 'account' %}aria-current="page"{% endif %}>{{ user.display_name }}</a>
+      <span>{{ role_labels[user.role] }}{% if user.role == 'mayor' %} · view only{% endif %}</span>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+        <button type="submit" class="link-button">Sign out</button>
+      </form>
+      {% endif %}
+    </div>
+  </nav>
+  <main class="content">
+    {% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% else %}
+<main class="content narrow">
+  {% if notice %}<p class="notice" role="status">{{ notice }}</p>{% endif %}
+  {% block public %}{% endblock %}
+</main>
+{% endif %}
+</body>
+</html>

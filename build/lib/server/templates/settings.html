@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="sub">Accounts, the laptop agent, and the activity log. Only the admin sees this page.</p>
+  </div>
+</div>
+
+<section class="panel stack">
+  <h2>Accounts</h2>
+  <div style="overflow-x: auto">
+  <table>
+    <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.display_name }}</td>
+        <td>{{ u.username }}</td>
+        <td>{{ role_labels[u.role] }}</td>
+        <td>
+          {% if not u.active %}<span class="badge failed">Turned off</span>
+          {% elif u.locked_until and u.locked_until > now %}<span class="badge failed">Locked (wrong passwords)</span>
+          {% else %}<span class="badge done">Active</span>{% endif %}
+        </td>
+        <td>
+          <details {% if reset_for == u.id %}open{% endif %}>
+            <summary>Manage</summary>
+            <form method="post" action="/settings/users/{{ u.id }}/password" class="form-row">
+              <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+              <label>New password (10+ characters)
+                <input type="password" name="password" minlength="10" maxlength="200" autocomplete="new-password" required>
+              </label>
+              <button type="submit" class="secondary small">Set password</button>
+            </form>
+            {% if reset_for == u.id and reset_error %}<p class="error" role="alert" style="margin-top: 8px">{{ reset_error }}</p>{% endif %}
+            {% if u.id != user.id %}
+            <form method="post" action="/settings/users/{{ u.id }}/active" style="margin-top: 8px">
+              <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+              <input type="hidden" name="active" value="{{ 0 if u.active else 1 }}">
+              <button type="submit" class="{{ 'danger' if u.active else 'secondary' }} small">{{ 'Turn off account' if u.active else 'Turn account back on' }}</button>
+            </form>
+            {% endif %}
+          </details>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <details {% if user_error %}open{% endif %}>
+    <summary>Add an account</summary>
+    {% if user_error %}<p class="error" role="alert">{{ user_error }}</p>{% endif %}
+    <form method="post" action="/settings/users" class="form-row" style="margin-top: 8px">
+      <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+      <label>Name
+        <input type="text" name="display_name" maxlength="80" required value="{{ form.display_name if form else '' }}">
+      </label>
+      <label>Username
+        <input type="text" name="username" maxlength="40" autocapitalize="none" required value="{{ form.username if form else '' }}">
+      </label>
+      <label>Role
+        <select name="role">
+          {% for r in roles %}<option value="{{ r }}" {% if form and form.role == r %}selected{% elif not form and r == 'staff' %}selected{% endif %}>{{ role_labels[r] }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Password (10+ characters)
+        <input type="password" name="password" minlength="10" maxlength="200" autocomplete="new-password" required>
+      </label>
+      <button type="submit">Create account</button>
+    </form>
+  </details>
+</section>
+
+<section class="panel stack" id="ai">
+  <h2>AI sentiment</h2>
+  {% if not ai_key_set %}
+  <p class="banner">No Anthropic API key is set, so comments are not being analyzed. On the server computer, set the
+    <code>ANTHROPIC_API_KEY</code> environment variable (see the README), then restart the website.</p>
+  {% endif %}
+  <dl class="facts">
+    <dt>Model</dt><dd><code>{{ ai_model }}</code> · effort {{ ai_effort }}</dd>
+    <dt>Status</dt><dd>
+      {% if ai_worker is none %}Turned off (<code>LCM_AI_WORKER=0</code>)
+      {% else %}{{ ai_worker.message or ai_worker.state }}
+      {% if ai_worker.last_error %}<br><span class="danger-text small">Last problem ({{ ai_worker.last_error_at | ago }}): {{ ai_worker.last_error }}</span>{% endif %}
+      {% endif %}</dd>
+    {% set done = ai_progress.labeled or 0 %}
+    <dt>Comments analyzed</dt><dd>{{ '{:,}'.format(done) }} of {{ '{:,}'.format(ai_progress.comments or 0) }}
+      {% if ai_progress.corrected %} · {{ ai_progress.corrected }} corrected by staff{% endif %}
+      {% if ai_progress.failed %} · <span class="danger-text">{{ ai_progress.failed }} could not be analyzed</span>{% endif %}</dd>
+    <dt>Cost in {{ ai_month }}</dt><dd>
+      ${{ '%.2f' | format(ai_cost) }}
+      {% for u in ai_usage %}<br><span class="small muted"><code>{{ u.model }}</code>: {{ u.calls }} calls, {{ '{:,}'.format(u.input_tokens or 0) }} tokens in, {{ '{:,}'.format(u.output_tokens or 0) }} out</span>{% endfor %}
+    </dd>
+  </dl>
+  <form method="post" action="/settings/ai/reanalyze" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <span class="grow small muted">Re-analyze forgets every AI label and summary and starts over (for example after changing the model). Staff corrections are kept.</span>
+    <button type="submit" class="secondary small" data-confirm="Re-analyze every comment? This uses the API again.">Re-analyze all comments</button>
+  </form>
+</section>
+
+<section class="panel stack" id="data">
+  <h2>Data and backups</h2>
+  <dl class="facts">
+    <dt>Kept for</dt><dd>
+      {% if retention_days > 0 %}{{ retention_days }} days. Comments posted before {{ retention.cutoff | fmt_date }} are deleted automatically every hour, with their replies, labels and corrections; a post goes once it has no comments left.
+      {% else %}Forever (<code>LCM_RETENTION_DAYS=0</code>).{% endif %}</dd>
+    <dt>Oldest comment</dt><dd>{{ retention.oldest | fmt_date if retention.oldest else 'No comments yet' }}
+      {% if retention.comments or retention.posts %}<br><span class="small muted">The next cleanup will delete {{ retention.comments }} comments and {{ retention.posts }} posts.</span>{% endif %}</dd>
+    <dt>Last cleanup</dt><dd>
+      {% if upkeep is none %}Automatic cleanup and backups are off (<code>LCM_MAINTENANCE=0</code>).
+      {% elif upkeep.last_cleanup_at %}{{ upkeep.last_cleanup_at | ago }}: {{ upkeep.last_cleanup }}
+      {% else %}Runs a minute after the website starts, then every hour.{% endif %}
+      {% if upkeep and upkeep.last_error %}<br><span class="danger-text small">Last problem ({{ upkeep.last_error_at | ago }}): {{ upkeep.last_error }}</span>{% endif %}</dd>
+    <dt>Backups</dt><dd>
+      A copy of the database every day; the newest {{ backup_keep }} are kept in <code>{{ backup_dir }}</code>.
+      {% if backups %}
+      <ul class="backup-list">
+        {% for b in backups[:5] %}<li>{{ b.made_at | fmt_time }} <span class="muted small">({{ '%.1f' | format(b.size / 1048576) }} MB)</span></li>{% endfor %}
+      </ul>
+      {% if backups | length > 5 %}<span class="small muted">and {{ backups | length - 5 }} older</span>{% endif %}
+      {% else %}<br><span class="danger-text">No backups yet.</span>{% endif %}
+      <br><span class="small muted">Backups on the same disk do not survive a broken computer. Set <code>LCM_BACKUP_DIR</code> to a OneDrive folder or USB drive (see the README).</span>
+    </dd>
+  </dl>
+  <form method="post" action="/settings/backup">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <button type="submit" class="secondary small">Back up now</button>
+  </form>
+</section>
+
+<section class="panel stack" id="view-links">
+  <h2>View-only links</h2>
+  <p class="muted">A link that opens the site without signing in, for the mayor: Overview, Posts, People and Keywords, and Excel exports. No editing, adding or correcting.</p>
+  {% if view_links %}
+  <div style="overflow-x: auto">
+  <table>
+    <thead><tr><th>For</th><th>Made</th><th>Last opened</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+      {% for v in view_links %}
+      <tr>
+        <td>{{ v.name }}{% if v.revoked %} <span class="badge failed">Turned off</span>{% endif %}</td>
+        <td>{{ v.created_at | fmt_date }}</td>
+        <td>{{ v.last_used_at | ago if v.last_used_at else 'never' }}</td>
+        <td>{% if not v.revoked %}
+          <form method="post" action="/settings/view-links/{{ v.id }}/revoke">
+            <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+            <button type="submit" class="danger small" data-confirm="Turn off the link for {{ v.name }}? Anyone using it is signed out.">Turn off</button>
+          </form>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <form method="post" action="/settings/view-links" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <label>Who it is for
+      <input type="text" name="name" maxlength="80" value="Mayor" required>
+    </label>
+    <button type="submit" class="secondary">Create view link</button>
+  </form>
+</section>
+
+<section class="panel stack">
+  <h2>Laptop agent</h2>
+  <p class="small muted">The agent on the admin laptop uses a token to upload what it collects. A new token is shown once; copy it into the agent's settings. Revoke a token if a laptop is lost.</p>
+  {% if tokens %}
+  <div style="overflow-x: auto">
+  <table>
+    <thead><tr><th>Name</th><th>Created</th><th>Last seen</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+      {% for t in tokens %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td>{{ t.created_at | fmt_date }}</td>
+        <td>{{ t.last_seen_at | ago }}</td>
+        <td>{% if t.revoked %}<span class="badge failed">Revoked</span>{% else %}<span class="badge done">Active</span>{% endif %}</td>
+        <td>{% if not t.revoked %}
+          <form method="post" action="/settings/agents/{{ t.id }}/revoke" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+            <button type="submit" class="danger small">Revoke</button>
+          </form>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <form method="post" action="/settings/agents" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <label>Name for this laptop
+      <input type="text" name="name" maxlength="80" placeholder="Admin laptop">
+    </label>
+    <button type="submit" class="secondary">Create agent token</button>
+  </form>
+</section>
+
+<section class="panel stack">
+  <h2>Activity log</h2>
+  <div style="overflow-x: auto">
+  <table>
+    <thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr></thead>
+    <tbody>
+      {% for e in log %}
+      <tr><td class="small">{{ e.at | fmt_time }}</td><td>{{ e.actor }}</td><td>{{ e.action }}</td><td class="small">{{ e.detail or '' }}</td></tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">Nothing yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}

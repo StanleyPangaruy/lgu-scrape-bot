@@ -97,7 +97,8 @@ def test_backups_keep_the_newest(conn, settings):
     copy = sqlite3.connect(kept[0].path)
     assert copy.execute("SELECT COUNT(*) FROM comments").fetchone()[0] == 1
     copy.close()
-    assert not list(settings.backup_dir.glob("*.partial"))
+    leftovers = [f.name for f in settings.backup_dir.iterdir() if not f.name.endswith(".db")]
+    assert leftovers == []  # no .partial, -wal or -shm files beside the backups
 
 
 def test_backup_now_button_and_settings_page(browsers, conn, settings):

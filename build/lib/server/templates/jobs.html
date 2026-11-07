@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Jobs</h1>
+    <p class="sub">Collections waiting for or done by the agent on the admin laptop.</p>
+  </div>
+</div>
+
+<div class="panel">
+  {% if agent.name %}
+  <p><span class="badge {{ 'done' if agent.online else 'failed' }}">{{ 'Online' if agent.online else 'Offline' }}</span>
+     <strong>{{ agent.name }}</strong> · last seen {{ agent.last_seen_at | ago }}{% if agent.status %} · {{ agent.status }}{% endif %}</p>
+  {% if not agent.online %}<p class="small muted" style="margin-top: 6px">Queued jobs will run when the agent is started on the admin laptop.</p>{% endif %}
+  {% else %}
+  <p>No agent set up yet. Create an agent token in <a href="/settings">Settings</a>, then start the agent on the admin laptop.</p>
+  {% endif %}
+</div>
+
+<div class="panel flush">
+  <table>
+    <thead><tr><th>Post</th><th>Status</th><th>Requested</th><th>Result</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr>
+        <td><a class="title-link" href="/posts/{{ j.post_id }}">{{ post_title(j.text, j.page_name, j.source_url) }}</a></td>
+        <td><span class="badge {{ j.status }}">{{ {'queued': 'Queued', 'running': 'Collecting', 'done': 'Done', 'failed': 'Failed'}[j.status] }}</span>
+          {% if j.status == 'running' and j.progress %}<div class="small muted">{{ j.progress }} comments so far</div>{% endif %}</td>
+        <td class="small">{{ j.requester or '—' }}<br><span class="muted">{{ j.created_at | fmt_time }}</span></td>
+        <td class="small">{{ j.message or '' }}{% if j.finished_at %}<br><span class="muted">{{ j.finished_at | fmt_time }}</span>{% endif %}</td>
+        <td class="num">
+          {% if j.status == 'failed' %}
+          <form method="post" action="/jobs/{{ j.id }}/retry" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+            <button type="submit" class="secondary small">Retry</button>
+          </form>
+          {% elif j.status == 'queued' %}
+          <form method="post" action="/jobs/{{ j.id }}/cancel" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+            <button type="submit" class="danger small">Cancel</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No jobs yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

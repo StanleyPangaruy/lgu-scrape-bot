@@ -152,6 +152,8 @@ def make_backup(settings: Settings, label: str = "") -> Path:
     dst = sqlite3.connect(partial)
     try:
         src.backup(dst)
+        # The copy is a single self-contained file (no -wal/-shm beside it).
+        dst.execute("PRAGMA journal_mode = DELETE")
     finally:
         dst.close()
         src.close()
@@ -161,6 +163,8 @@ def make_backup(settings: Settings, label: str = "") -> Path:
         partial.unlink(missing_ok=True)
         raise
     partial.replace(final)
+    for leftover in folder.glob("*.partial*"):  # from older versions or an interrupted backup
+        leftover.unlink(missing_ok=True)
     for old in list_backups(settings)[settings.backup_keep:]:
         old.path.unlink(missing_ok=True)
     return final
