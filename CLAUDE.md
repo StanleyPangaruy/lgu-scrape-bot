@@ -64,6 +64,7 @@ python -m pytest
 - Read labels through the `comment_labels` view (a staff correction overrides the AI). An edited comment loses its AI label and is labeled again; corrections are kept. Every API call is recorded in `api_usage` (Settings shows the monthly cost).
 - Only the admin adds posts (staff send the admin links; there is no request queue). Retention: comments older than `LCM_RETENTION_DAYS` (365) by their Facebook date are deleted hourly by `server/maintenance.py`, replies go with their parent comment, and posts with no comments left are removed. Never delete a post that has a queued or running job.
 - View-only links (`view_links`, `/view/<token>`): each link has its own hidden mayor-role user (excluded from the Accounts list); revoking deactivates it and deletes its sessions. Only the token's hash is stored; the link is shown once.
+- Server (Lightsail): code in /opt/lcm, data in /var/lib/lcm, settings in /etc/lcm/env (root:lcm 640, holds the API key), service `lcm`, Caddy for HTTPS; `sudo lcm <command>` runs `python -m server` as the service user.
 - Backups: daily SQLite backup-API copies in `LCM_BACKUP_DIR` (default `data/backups`, newest 14 kept); `restore` needs the website stopped and backs up the current database first.
 
 Output format is picked from the `--output` extension: `.csv` (default `output.csv`, UTF-8 with BOM for Excel), `.json`, or `.db`/`.sqlite` (upserts by comment `id`).
@@ -132,6 +133,7 @@ lgu-scrape-bot/
 │   ├── templates/, static/
 │   └── cli.py           # python -m server …
 ├── agent/runner.py      # python -m agent: claim job → scrape → upload
+├── deploy/             # setup.sh (Ubuntu + systemd + Caddy), update.sh, restore.sh for AWS Lightsail
 ├── tests/               # pytest
 ├── data/                # monitor.db (gitignored: residents' comments)
 ├── screenshots/         # Comment screenshots (gitignored: names and photos)

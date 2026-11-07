@@ -266,6 +266,40 @@ pip install -e ".[dev]"
 python -m pytest
 ```
 
+## Putting the website online (AWS Lightsail)
+
+The website runs on a small Ubuntu server; the scraper agent stays on the admin laptop. `deploy/setup.sh` installs everything: the website as the `lcm` service (starts on boot, restarts if it stops), and Caddy in front for HTTPS. The address is a free `<server-ip>.sslip.io` name until you get a real domain.
+
+1. **Create the server** at lightsail.aws.amazon.com: *Create instance* → region **Singapore**, *Linux/Unix* → *OS Only* → **Ubuntu 24.04 LTS**, the 1 GB (or larger) plan, name it `lcm`.
+2. **Give it a fixed address**: *Networking* → *Create static IP* → attach it to `lcm`. Do this before step 4: the website address is made from this IP.
+3. **Open HTTPS**: on the instance, *Networking* → *IPv4 Firewall* → *Add rule* → **HTTPS**. Keep SSH and HTTP (HTTP is needed to get the certificate).
+4. **Install**: click *Connect using SSH* and run the following. It takes about 5 minutes, runs the tests on the server, and asks for the Anthropic API key (typed there, not shown):
+
+   ```bash
+   curl -fsSLO https://raw.githubusercontent.com/StanleyPangaruy/lgu-scrape-bot/main/deploy/setup.sh
+   sudo bash setup.sh
+   ```
+
+5. **Bring the existing data** (no re-collecting, no paying for labels again): on the admin computer run `python -m server backup`, then in the SSH window use the gear menu → *Upload file* to upload that `monitor-….db`, and:
+
+   ```bash
+   sudo bash /opt/lcm/deploy/restore.sh ~/monitor-2026-11-07-141500.db
+   ```
+
+   Accounts, passwords, keywords, labels and the agent token all come along. To start empty instead: `sudo lcm create-user admin --name "Your Name" --role admin`.
+6. **Point the agent at the server** on the admin laptop: `python -m agent --server https://<address> --token <TOKEN>`. Stop using the copy on the admin computer, so the data lives in one place.
+7. **Mayor's link**: create a new one in Settings → View-only links (the old one had the local address).
+8. **Off-server copies**: in Lightsail, *Snapshots* → turn on **automatic snapshots** (a few cents per GB a month). The website's own daily backups stay on the server's disk.
+
+Day to day on the server:
+
+| Task | Command |
+| --- | --- |
+| Install the newest code from GitHub | `sudo bash /opt/lcm/deploy/update.sh` |
+| Admin commands | `sudo lcm backup`, `sudo lcm cleanup`, `sudo lcm create-user …` |
+| Change settings (API key, …) | `sudo nano /etc/lcm/env`, then `sudo systemctl restart lcm` |
+| See what happened | `sudo journalctl -u lcm -n 100` |
+
 ## Linux servers (no display)
 
 The scraper never runs headless (Facebook flags headless browsers). On a machine without a screen, run it under a virtual display:
