@@ -11,19 +11,23 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
-from server import jobs, queries
+from server import jobs, maintenance, queries
 from server.auth import (
     LOGIN_CSRF_COOKIE,
     ROLE_LABELS,
     ROLES,
     SESSION_COOKIE,
+    VIEW_LINK_SESSION_DAYS,
     AccountError,
     User,
     attempt_login,
     check_csrf,
     create_user,
+    create_view_link,
     current_user,
     end_session,
+    open_view_link,
+    revoke_view_link,
     get_db,
     get_settings,
     optional_user,
@@ -70,6 +74,10 @@ NOTICES = {
     "label-cleared": "Correction removed; the AI's label is shown again.",
     "reanalyze": "All comments will be analyzed again. Staff corrections were kept.",
     "password-changed": "Password changed. Sign in with your new password.",
+    "post-deleted": "Post and its comments deleted.",
+    "post-busy": "This post is being collected right now. Cancel the job on the Jobs page first, then delete it.",
+    "backup-made": "Backup made.",
+    "link-revoked": "View link turned off. Anyone who opened it is signed out.",
 }
 
 
@@ -135,7 +143,8 @@ def home(user: AnyUser) -> RedirectResponse:
 
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, user: Annotated[User | None, Depends(optional_user)], next: str = "/") -> Response:
-    if user is not None:
+    # Someone viewing through a view-only link can still sign in with a real account.
+    if user is not None and not user.via_link:
         return redirect(safe_next(next))
     return _login_form(request, next, None)
 
@@ -176,6 +185,64 @@ def login(
     )
     response.delete_cookie(LOGIN_CSRF_COOKIE)
     return response
+
+
+@router.get("/view/{token}")
+def view_link(
+    request: Request, conn: Db, token: str, user: Annotated[User | None, Depends(optional_user)],
+) -> Response:
+    """A view-only link: opens the site as a viewer without a password."""
+    if user is not None and not user.via_link:
+        # Do not swap a real sign-in (the admin testing the link) for the viewer.
+        response = render(request, "view_link_signed_in.html", user)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    session = open_view_link(conn, token[:100])
+    if session is None:
+        response = templates(request).TemplateResponse(
+            request, "error.html",
+            {"user": None, "status": 404,
+             "message": "This view link is not valid or was turned off. Ask the admin for a new one."},
+            status_code=404,
+        )
+    else:
+        end_session(conn, request.cookies.get(SESSION_COOKIE))
+        response = redirect("/overview")
+        response.set_cookie(
+            SESSION_COOKIE, session, httponly=True, samesite="lax",
+            secure=get_settings(request).secure_cookies, max_age=VIEW_LINK_SESSION_DAYS * 86400,
+        )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@router.post("/settings/view-links", response_class=HTMLResponse)
+def add_view_link(
+    request: Request, conn: Db, user: Admin, csrf_token: CsrfField,
+    name: Annotated[str, Form(max_length=80)] = "",
+) -> Response:
+    check_csrf(user, csrf_token)
+    name = " ".join(name.split()) or "Mayor"
+    with transaction(conn):
+        token = create_view_link(conn, name, user.id)
+        audit(conn, user.username, "created view-only link", name, user.id)
+    link = str(request.base_url).rstrip("/") + "/view/" + token
+    response = render(request, "view_link.html", user, name=name, link=link)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/settings/view-links/{link_id}/revoke")
+def revoke_link(conn: Db, user: Admin, link_id: int, csrf_token: CsrfField) -> Response:
+    check_csrf(user, csrf_token)
+    with transaction(conn):
+        name = revoke_view_link(conn, link_id)
+        if name is None:
+            raise HTTPException(status_code=404, detail="No such link.")
+        audit(conn, user.username, "turned off view-only link", name, user.id)
+    return redirect("/settings?notice=link-revoked#view-links")
 
 
 @router.post("/logout")
@@ -256,6 +323,24 @@ def recheck(conn: Db, user: Admin, post_id: int, csrf_token: CsrfField) -> Respo
         _, created = jobs.enqueue(conn, post_id, user.id)
         audit(conn, user.username, "re-check requested", f"post {post_id}", user.id)
     return redirect(f"/posts/{post_id}?notice=" + ("recheck-queued" if created else "already-queued"))
+
+
+@router.post("/posts/{post_id}/delete")
+def delete_post(conn: Db, user: Admin, post_id: int, csrf_token: CsrfField) -> Response:
+    """Delete a post and everything stored with it, before the automatic cleanup would."""
+    check_csrf(user, csrf_token)
+    with transaction(conn):
+        post = conn.execute("SELECT text, page_name, source_url FROM posts WHERE id = ?", (post_id,)).fetchone()
+        if post is None:
+            raise HTTPException(status_code=404, detail="No such post.")
+        if conn.execute(
+            "SELECT 1 FROM jobs WHERE post_id = ? AND status IN ('queued', 'running')", (post_id,)
+        ).fetchone():
+            return redirect(f"/posts/{post_id}?notice=post-busy")
+        removed = maintenance.delete_post(conn, post_id)
+        title = queries.post_title(post["text"], post["page_name"], post["source_url"])
+        audit(conn, user.username, "deleted post", f"{title} ({removed} comments)", user.id)
+    return redirect("/posts?notice=post-deleted")
 
 
 def _load_post(conn: sqlite3.Connection, post_id: int) -> sqlite3.Row:
@@ -693,13 +778,39 @@ def cancel_job(conn: Db, user: Admin, job_id: int, csrf_token: CsrfField) -> Res
 
 def _settings_context(request: Request, conn: sqlite3.Connection) -> dict[str, Any]:
     return {
-        "users": conn.execute("SELECT * FROM users ORDER BY active DESC, role, display_name").fetchall(),
+        "users": conn.execute(
+            "SELECT * FROM users WHERE id NOT IN (SELECT user_id FROM view_links) ORDER BY active DESC, role, display_name"
+        ).fetchall(),
+        "view_links": conn.execute("SELECT * FROM view_links ORDER BY revoked, id DESC").fetchall(),
         "tokens": conn.execute("SELECT * FROM agent_tokens ORDER BY revoked, id DESC").fetchall(),
         "log": conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 50").fetchall(),
         "roles": ROLES,
         "now": now(),
         **_ai_context(request, conn),
+        **_data_context(request, conn),
     }
+
+
+def _data_context(request: Request, conn: sqlite3.Connection) -> dict[str, Any]:
+    settings = get_settings(request)
+    upkeep = request.app.state.upkeep
+    return {
+        "retention_days": settings.retention_days,
+        "retention": maintenance.retention_preview(conn, settings),
+        "backups": maintenance.list_backups(settings),
+        "backup_dir": settings.backup_dir.resolve(),
+        "backup_keep": settings.backup_keep,
+        "upkeep": upkeep.status if upkeep is not None else None,
+    }
+
+
+@router.post("/settings/backup")
+def backup_now(request: Request, conn: Db, user: Admin, csrf_token: CsrfField) -> Response:
+    check_csrf(user, csrf_token)
+    path = maintenance.make_backup(get_settings(request))
+    with transaction(conn):
+        audit(conn, user.username, "made a backup", path.name, user.id)
+    return redirect("/settings?notice=backup-made#data")
 
 
 def _ai_context(request: Request, conn: sqlite3.Connection) -> dict[str, Any]:
@@ -844,6 +955,8 @@ def revoke_agent_token(conn: Db, user: Admin, token_id: int, csrf_token: CsrfFie
 
 @router.get("/account", response_class=HTMLResponse)
 def account_page(request: Request, user: AnyUser) -> Response:
+    if user.via_link:  # no password or account to manage
+        return redirect("/overview")
     return render(request, "account.html", user)
 
 
@@ -854,6 +967,8 @@ def change_own_password(
     confirm: Annotated[str, Form(max_length=200)],
 ) -> Response:
     check_csrf(user, csrf_token)
+    if user.via_link:
+        raise HTTPException(status_code=403, detail="Your account cannot do this.")
     row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user.id,)).fetchone()
     error = None
     if not verify_password(current, row["password_hash"]):

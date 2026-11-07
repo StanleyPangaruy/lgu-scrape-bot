@@ -174,9 +174,16 @@ python -m server serve
 
 | Role | Can do |
 | --- | --- |
-| Admin | Everything: add posts, re-check, keywords, accounts, agent tokens, jobs |
+| Admin | Everything: add, re-check and delete posts, keywords, accounts, agent tokens, jobs, backups |
 | Staff | View all pages, export to Excel, add, edit and delete keywords, correct AI labels |
 | Mayor | View all pages, export to Excel |
+
+### The mayor's view link (no sign-in)
+
+**Settings → View-only links → Create view link** makes a private link. Opening it shows Overview, Posts, People and Keywords, with Excel exports, without a username or password. Nothing can be changed through it: no keyword editing, adding posts, or correcting labels. Ask the mayor to bookmark the link itself; it keeps working until you turn it off in the same place, which also signs out every device that opened it.
+
+- Send the link privately: anyone who has it can read residents' comments.
+- The link uses the address you opened the site with. While the website runs only on this computer (`127.0.0.1`), the link works only here; it works for the mayor once the site is reachable from the mayor's device (on the office network with `--host 0.0.0.0`, or online).
 
 ### Laptop agent
 
@@ -217,6 +224,25 @@ Accuracy check: compare the AI's "supportive" with comments you picked by hand (
 python -m server compare-supportive positive_*.csv --label
 ```
 
+### Keeping data for one year, and backups
+
+- **Adding posts:** only the admin adds and re-checks posts. Staff send the admin the Facebook link.
+- **One year:** comments posted more than a year ago are deleted automatically, checked every hour. Their replies, labels and corrections are deleted with them, and a post goes once it has no comments left. The admin can delete a post sooner with **Delete post** on its page. Settings → **Data and backups** shows the oldest comment and what the next cleanup will remove.
+- **Backups:** the website saves a copy of the database every day and keeps the newest 14 in `data/backups`. **Back up now** in Settings makes one immediately.
+
+A backup on the same disk is lost if the computer dies. Point backups at a folder that is copied elsewhere, such as OneDrive or a USB drive (PowerShell, then open a new terminal and restart the website):
+
+```powershell
+[Environment]::SetEnvironmentVariable("LCM_BACKUP_DIR", "$env:USERPROFILE\OneDrive\LCM backups", "User")
+```
+
+```bash
+python -m server backup                       # save a copy now
+python -m server cleanup                      # show what is past one year (add --yes to delete now)
+# Restore: stop the website (Ctrl+C) first. The current database is backed up before it is replaced.
+python -m server restore data/backups/monitor-2026-11-07-020000.db --yes
+```
+
 ### Settings (environment variables)
 
 | Variable | Default | Meaning |
@@ -228,6 +254,10 @@ python -m server compare-supportive positive_*.csv --label
 | `LCM_SENTIMENT_MODEL` | `claude-haiku-5-5` | Claude model for labels and summaries |
 | `LCM_SENTIMENT_EFFORT` | `low` | Effort setting (`low`, `medium`, `high`) |
 | `LCM_AI_WORKER` | `1` | `0` turns the background analysis off |
+| `LCM_RETENTION_DAYS` | `365` | Delete comments older than this; `0` keeps everything |
+| `LCM_BACKUP_DIR` | `data/backups` | Where daily backups go |
+| `LCM_BACKUP_KEEP` | `14` | How many backups to keep |
+| `LCM_MAINTENANCE` | `1` | `0` turns off the hourly cleanup and daily backup |
 
 ### Tests
 

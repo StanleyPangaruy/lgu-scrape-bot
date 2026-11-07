@@ -19,6 +19,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from server import api, web
 from server.ai import LABEL_NAMES
 from server.analysis import AnalysisWorker
+from server.maintenance import MaintenanceWorker
 from server.auth import LoginRequired
 from server.config import Settings
 from server.db import connect, migrate, now
@@ -110,15 +111,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         prepare_database(settings)
         worker = AnalysisWorker(settings) if settings.ai_worker else None
-        app.state.worker = worker
-        if worker is not None:
-            worker.start()
+        upkeep = MaintenanceWorker(settings) if settings.maintenance else None
+        app.state.worker, app.state.upkeep = worker, upkeep
+        for thread in (worker, upkeep):
+            if thread is not None:
+                thread.start()
         try:
             yield
         finally:
-            if worker is not None:
-                worker.stop()
-                worker.join(timeout=10)
+            for thread in (worker, upkeep):
+                if thread is not None:
+                    thread.stop()
+                    thread.join(timeout=10)
 
     app = FastAPI(
         title="LGU Comment Monitor", lifespan=lifespan,
@@ -127,6 +131,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.templates = make_templates(settings)
     app.state.worker = None
+    app.state.upkeep = None
 
     @app.middleware("http")
     async def guard(request: Request, call_next) -> Response:

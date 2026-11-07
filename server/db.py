@@ -195,6 +195,19 @@ MIGRATIONS: list[str] = [
         LEFT JOIN comment_sentiment s ON s.comment_id = c.id
         LEFT JOIN comment_corrections k ON k.comment_id = c.id;
     """,
+    # 3: view-only links (open the site without signing in; each link has its own hidden viewer).
+    """
+    CREATE TABLE view_links (
+        id            INTEGER PRIMARY KEY,
+        name          TEXT NOT NULL,
+        token_hash    TEXT NOT NULL UNIQUE,
+        user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        created_at    INTEGER NOT NULL,
+        last_used_at  INTEGER,
+        revoked       INTEGER NOT NULL DEFAULT 0
+    );
+    """,
 ]
 
 

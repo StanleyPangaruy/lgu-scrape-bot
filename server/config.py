@@ -32,10 +32,21 @@ class Settings:
     sentiment_effort: str = "low"
     # Run the background sentiment worker inside the website (off in tests).
     ai_worker: bool = True
+    # Comments older than this many days are deleted automatically (0 = keep forever).
+    retention_days: int = 365
+    # Backups: where they go (default data/backups) and how many to keep.
+    backups: Path | None = None
+    backup_keep: int = 14
+    # Run hourly cleanup and the daily backup inside the website (off in tests).
+    maintenance: bool = True
 
     @property
     def db_path(self) -> Path:
         return self.data_dir / "monitor.db"
+
+    @property
+    def backup_dir(self) -> Path:
+        return self.backups or self.data_dir / "backups"
 
     @property
     def tz(self) -> timezone:
@@ -50,4 +61,8 @@ class Settings:
             sentiment_model=os.environ.get("LCM_SENTIMENT_MODEL", "claude-haiku-5-5").strip(),
             sentiment_effort=os.environ.get("LCM_SENTIMENT_EFFORT", "low").strip(),
             ai_worker=_flag("LCM_AI_WORKER", True),
+            retention_days=int(os.environ.get("LCM_RETENTION_DAYS", "365")),
+            backups=Path(os.environ["LCM_BACKUP_DIR"]) if os.environ.get("LCM_BACKUP_DIR") else None,
+            backup_keep=max(1, int(os.environ.get("LCM_BACKUP_KEEP", "14"))),
+            maintenance=_flag("LCM_MAINTENANCE", True),
         )

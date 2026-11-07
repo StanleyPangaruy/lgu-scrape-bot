@@ -103,6 +103,69 @@
   </form>
 </section>
 
+<section class="panel stack" id="data">
+  <h2>Data and backups</h2>
+  <dl class="facts">
+    <dt>Kept for</dt><dd>
+      {% if retention_days > 0 %}{{ retention_days }} days. Comments posted before {{ retention.cutoff | fmt_date }} are deleted automatically every hour, with their replies, labels and corrections; a post goes once it has no comments left.
+      {% else %}Forever (<code>LCM_RETENTION_DAYS=0</code>).{% endif %}</dd>
+    <dt>Oldest comment</dt><dd>{{ retention.oldest | fmt_date if retention.oldest else 'No comments yet' }}
+      {% if retention.comments or retention.posts %}<br><span class="small muted">The next cleanup will delete {{ retention.comments }} comments and {{ retention.posts }} posts.</span>{% endif %}</dd>
+    <dt>Last cleanup</dt><dd>
+      {% if upkeep is none %}Automatic cleanup and backups are off (<code>LCM_MAINTENANCE=0</code>).
+      {% elif upkeep.last_cleanup_at %}{{ upkeep.last_cleanup_at | ago }}: {{ upkeep.last_cleanup }}
+      {% else %}Runs a minute after the website starts, then every hour.{% endif %}
+      {% if upkeep and upkeep.last_error %}<br><span class="danger-text small">Last problem ({{ upkeep.last_error_at | ago }}): {{ upkeep.last_error }}</span>{% endif %}</dd>
+    <dt>Backups</dt><dd>
+      A copy of the database every day; the newest {{ backup_keep }} are kept in <code>{{ backup_dir }}</code>.
+      {% if backups %}
+      <ul class="backup-list">
+        {% for b in backups[:5] %}<li>{{ b.made_at | fmt_time }} <span class="muted small">({{ '%.1f' | format(b.size / 1048576) }} MB)</span></li>{% endfor %}
+      </ul>
+      {% if backups | length > 5 %}<span class="small muted">and {{ backups | length - 5 }} older</span>{% endif %}
+      {% else %}<br><span class="danger-text">No backups yet.</span>{% endif %}
+      <br><span class="small muted">Backups on the same disk do not survive a broken computer. Set <code>LCM_BACKUP_DIR</code> to a OneDrive folder or USB drive (see the README).</span>
+    </dd>
+  </dl>
+  <form method="post" action="/settings/backup">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <button type="submit" class="secondary small">Back up now</button>
+  </form>
+</section>
+
+<section class="panel stack" id="view-links">
+  <h2>View-only links</h2>
+  <p class="muted">A link that opens the site without signing in, for the mayor: Overview, Posts, People and Keywords, and Excel exports. No editing, adding or correcting.</p>
+  {% if view_links %}
+  <div style="overflow-x: auto">
+  <table>
+    <thead><tr><th>For</th><th>Made</th><th>Last opened</th><th><span class="sr-only">Actions</span></th></tr></thead>
+    <tbody>
+      {% for v in view_links %}
+      <tr>
+        <td>{{ v.name }}{% if v.revoked %} <span class="badge failed">Turned off</span>{% endif %}</td>
+        <td>{{ v.created_at | fmt_date }}</td>
+        <td>{{ v.last_used_at | ago if v.last_used_at else 'never' }}</td>
+        <td>{% if not v.revoked %}
+          <form method="post" action="/settings/view-links/{{ v.id }}/revoke">
+            <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+            <button type="submit" class="danger small" data-confirm="Turn off the link for {{ v.name }}? Anyone using it is signed out.">Turn off</button>
+          </form>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+  <form method="post" action="/settings/view-links" class="form-row">
+    <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+    <label>Who it is for
+      <input type="text" name="name" maxlength="80" value="Mayor" required>
+    </label>
+    <button type="submit" class="secondary">Create view link</button>
+  </form>
+</section>
+
 <section class="panel stack">
   <h2>Laptop agent</h2>
   <p class="small muted">The agent on the admin laptop uses a token to upload what it collects. A new token is shown once; copy it into the agent's settings. Revoke a token if a laptop is lost.</p>

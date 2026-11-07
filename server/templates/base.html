@@ -22,12 +22,21 @@
     <a href="/settings" {% if section == 'settings' %}aria-current="page"{% endif %}>Settings</a>
     {% endif %}
     <div class="who">
+      {% if user.via_link %}
+      <span class="who-name">{{ user.display_name }}</span>
+      <span>View only</span>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+        <button type="submit" class="link-button">Sign in with an account</button>
+      </form>
+      {% else %}
       <a href="/account" {% if section == 'account' %}aria-current="page"{% endif %}>{{ user.display_name }}</a>
       <span>{{ role_labels[user.role] }}{% if user.role == 'mayor' %} · view only{% endif %}</span>
       <form method="post" action="/logout">
         <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
         <button type="submit" class="link-button">Sign out</button>
       </form>
+      {% endif %}
     </div>
   </nav>
   <main class="content">

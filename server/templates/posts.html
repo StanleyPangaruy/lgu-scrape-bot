@@ -5,7 +5,7 @@
 <div class="page-head">
   <div>
     <h1>Posts</h1>
-    <p class="sub">Facebook posts collected so far.</p>
+    <p class="sub">Facebook posts collected so far.{% if not user.is_admin %} To add a post, send its Facebook link to the admin.{% endif %}</p>
   </div>
   <div class="actions">
     <a class="button secondary" href="/posts/export.xlsx">Export to Excel</a>
@@ -98,7 +98,7 @@
 {% else %}
 <div class="panel empty">
   <p>No posts yet.</p>
-  <p class="muted">{% if user.is_admin %}Paste a Facebook post link above to collect its comments.{% else %}The admin adds posts; they will appear here.{% endif %}</p>
+  <p class="muted">{% if user.is_admin %}Paste a Facebook post link above to collect its comments.{% else %}To add a post, send its Facebook link to the admin. It appears here once collected.{% endif %}</p>
 </div>
 {% endif %}
 {% endblock %}

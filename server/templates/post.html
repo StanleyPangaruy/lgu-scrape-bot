@@ -51,6 +51,12 @@
     </form>
     {% endif %}
     <a class="button secondary" href="/posts/{{ post.id }}/export.xlsx">Export to Excel</a>
+    {% if user.is_admin %}
+    <form method="post" action="/posts/{{ post.id }}/delete" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ user.csrf_token }}">
+      <button type="submit" class="danger" data-confirm="Delete this post and all {{ post.stored_comments }} of its comments? This cannot be undone (except from a backup).">Delete post</button>
+    </form>
+    {% endif %}
   </div>
 </div>
 

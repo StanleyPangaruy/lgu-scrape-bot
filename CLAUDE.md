@@ -44,6 +44,7 @@ python main.py --url "<POST_URL>" --screenshot ./positive.csv   # -> screenshots
 python -m server create-user admin --name "Admin" --role admin
 python -m server import-csv comments_*.csv
 python -m server compare-supportive positive_*.csv [--label]   # AI accuracy check
+python -m server backup | cleanup [--yes] | restore FILE --yes
 python -m server serve                     # http://127.0.0.1:8000
 python -m agent --server http://127.0.0.1:8000 --token <agent token>
 
@@ -61,6 +62,9 @@ python -m pytest
 - AI sentiment (`server/ai.py` prompts and API calls, `server/analysis.py` background worker) uses `claude-haiku-5-5` (effort `low`; `LCM_SENTIMENT_MODEL`/`LCM_SENTIMENT_EFFORT`). Labels: supportive / against / neutral / question. "Supportive" = backs the LGU measure; general thanks, advice, requests and sarcasm are not.
 - The key comes only from `ANTHROPIC_API_KEY` in the environment; never ask for it or write it to a file. Real API calls cost money: tests use a fake client, and running `compare-supportive --label` needs the user's go-ahead.
 - Read labels through the `comment_labels` view (a staff correction overrides the AI). An edited comment loses its AI label and is labeled again; corrections are kept. Every API call is recorded in `api_usage` (Settings shows the monthly cost).
+- Only the admin adds posts (staff send the admin links; there is no request queue). Retention: comments older than `LCM_RETENTION_DAYS` (365) by their Facebook date are deleted hourly by `server/maintenance.py`, replies go with their parent comment, and posts with no comments left are removed. Never delete a post that has a queued or running job.
+- View-only links (`view_links`, `/view/<token>`): each link has its own hidden mayor-role user (excluded from the Accounts list); revoking deactivates it and deletes its sessions. Only the token's hash is stored; the link is shown once.
+- Backups: daily SQLite backup-API copies in `LCM_BACKUP_DIR` (default `data/backups`, newest 14 kept); `restore` needs the website stopped and backs up the current database first.
 
 Output format is picked from the `--output` extension: `.csv` (default `output.csv`, UTF-8 with BOM for Excel), `.json`, or `.db`/`.sqlite` (upserts by comment `id`).
 
@@ -122,6 +126,7 @@ lgu-scrape-bot/
 │   ├── ai.py            # Claude prompts, structured output, cost per call
 │   ├── analysis.py      # Background worker: label comments, post summaries, 30-day brief
 │   ├── accuracy.py      # compare-supportive: AI labels vs hand-picked comments
+│   ├── maintenance.py   # 1-year retention, post deletion, daily backups, restore
 │   ├── queries.py       # Read queries for the pages
 │   ├── excel.py         # .xlsx exports (formula-injection safe)
 │   ├── templates/, static/

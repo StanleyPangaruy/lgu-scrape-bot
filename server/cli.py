@@ -5,6 +5,9 @@
     python -m server import-csv comments_1CYuJh1ntq.csv [more.csv …]
     python -m server create-agent-token "Admin laptop"
     python -m server compare-supportive positive_*.csv [--label [--relabel]]
+    python -m server backup
+    python -m server restore data/backups/monitor-2026-11-07-020000.db --yes
+    python -m server cleanup [--yes]
 """
 
 from __future__ import annotations
@@ -174,6 +177,58 @@ def cmd_compare_supportive(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def cmd_backup(args: argparse.Namespace, settings: Settings) -> int:
+    from server import maintenance
+
+    prepare_database(settings)
+    path = maintenance.make_backup(settings)
+    print(f"Backup saved: {path}")
+    return 0
+
+
+def cmd_restore(args: argparse.Namespace, settings: Settings) -> int:
+    from server import maintenance
+
+    if not args.file.is_file():
+        print(f"{args.file} not found.")
+        return 1
+    if not args.yes:
+        print(f"This replaces {settings.db_path} with {args.file}.")
+        print("Stop the website first (Ctrl+C), then run this again with --yes.")
+        print("The current database is backed up before it is replaced.")
+        return 1
+    try:
+        safety = maintenance.restore_backup(settings, args.file)
+    except (ValueError, OSError) as e:
+        print(f"Not restored: {e}")
+        return 1
+    if safety:
+        print(f"The database as it was before is saved as {safety}")
+    print(f"Restored from {args.file}. Start the website again.")
+    return 0
+
+
+def cmd_cleanup(args: argparse.Namespace, settings: Settings) -> int:
+    from server import maintenance
+
+    conn = _connect(settings)
+    try:
+        preview = maintenance.retention_preview(conn, settings)
+        if preview["cutoff"] is None:
+            print("Retention is off (LCM_RETENTION_DAYS=0); nothing is deleted.")
+            return 0
+        print(f"Comments older than {settings.retention_days} days: {preview['comments']} "
+              f"(with their replies); posts left empty: {preview['posts']}.")
+        if not args.yes:
+            print("Run again with --yes to delete them now (the website also does this every hour).")
+            return 0
+        comments, posts = maintenance.apply_retention(conn, settings, who="command line")
+        print(f"Deleted {comments} comments and {posts} posts.")
+    finally:
+        conn.close()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m server", description="LGU Comment Monitor admin commands")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -203,6 +258,18 @@ def main(argv: list[str] | None = None) -> int:
     cmp.add_argument("--label", action="store_true", help="first label those posts' comments with Claude (costs a little)")
     cmp.add_argument("--relabel", action="store_true", help="with --label: forget these posts' AI labels first (after a prompt change)")
     cmp.set_defaults(func=cmd_compare_supportive)
+
+    bak = sub.add_parser("backup", help="save a copy of the database now")
+    bak.set_defaults(func=cmd_backup)
+
+    res = sub.add_parser("restore", help="replace the database with a backup (stop the website first)")
+    res.add_argument("file", type=Path)
+    res.add_argument("--yes", action="store_true", help="really replace it")
+    res.set_defaults(func=cmd_restore)
+
+    cln = sub.add_parser("cleanup", help="show (and with --yes delete) comments past the retention period")
+    cln.add_argument("--yes", action="store_true", help="delete them now")
+    cln.set_defaults(func=cmd_cleanup)
 
     args = parser.parse_args(argv)
     return args.func(args, Settings.from_env())

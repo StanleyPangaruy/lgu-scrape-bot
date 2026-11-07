@@ -39,6 +39,8 @@ class User:
     role: str
     csrf_token: str
     posts_seen_at: int | None
+    # Signed in through a view-only link (no password; nothing to manage on /account).
+    via_link: bool = False
 
     @property
     def is_admin(self) -> bool:
@@ -77,7 +79,8 @@ def get_db(request: Request) -> Iterator[sqlite3.Connection]:
 def _load_session(conn: sqlite3.Connection, token: str) -> User | None:
     row = conn.execute(
         """
-        SELECT u.id, u.username, u.display_name, u.role, u.posts_seen_at, s.csrf_token
+        SELECT u.id, u.username, u.display_name, u.role, u.posts_seen_at, s.csrf_token,
+               EXISTS (SELECT 1 FROM view_links v WHERE v.user_id = u.id) AS via_link
         FROM sessions s JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1
         """,
@@ -87,7 +90,7 @@ def _load_session(conn: sqlite3.Connection, token: str) -> User | None:
         return None
     return User(
         row["id"], row["username"], row["display_name"], row["role"], row["csrf_token"],
-        row["posts_seen_at"],
+        row["posts_seen_at"], bool(row["via_link"]),
     )
 
 
@@ -219,3 +222,58 @@ def set_password(conn: sqlite3.Connection, user_id: int, password: str) -> None:
     )
     # Changing a password signs that person out everywhere.
     conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+
+# --- View-only links ----------------------------------------------------------------------
+
+VIEW_LINK_SESSION_DAYS = 90
+
+
+def create_view_link(conn: sqlite3.Connection, name: str, created_by: int | None) -> str:
+    """A secret link that opens the site view-only (mayor role) without a password.
+    Returns the token; only its hash is stored. Call inside a transaction."""
+    token = new_token()
+    n = conn.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM view_links").fetchone()[0]
+    cur = conn.execute(
+        "INSERT INTO users (username, display_name, role, password_hash, created_at) VALUES (?, ?, 'mayor', ?, ?)",
+        (f"view-link-{n}-{new_token()[:6]}", name, hash_password(new_token()), now()),
+    )
+    conn.execute(
+        "INSERT INTO view_links (name, token_hash, user_id, created_by, created_at) VALUES (?, ?, ?, ?, ?)",
+        (name, token_hash(token), cur.lastrowid, created_by, now()),
+    )
+    return token
+
+
+def open_view_link(conn: sqlite3.Connection, token: str) -> str | None:
+    """A new session for a valid link (None if unknown or turned off)."""
+    with transaction(conn):
+        row = conn.execute(
+            """
+            SELECT v.id, v.name, v.user_id FROM view_links v JOIN users u ON u.id = v.user_id
+            WHERE v.token_hash = ? AND v.revoked = 0 AND u.active = 1
+            """,
+            (token_hash(token),),
+        ).fetchone()
+        if row is None:
+            return None
+        t = now()
+        session = new_token()
+        conn.execute(
+            "INSERT INTO sessions (token_hash, user_id, csrf_token, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+            (token_hash(session), row["user_id"], new_token(), t, t + VIEW_LINK_SESSION_DAYS * 86400),
+        )
+        conn.execute("UPDATE view_links SET last_used_at = ? WHERE id = ?", (t, row["id"]))
+        audit(conn, row["name"], "opened view-only link", "", row["user_id"])
+    return session
+
+
+def revoke_view_link(conn: sqlite3.Connection, link_id: int) -> str | None:
+    """Turn a link off and sign out everyone who opened it. Returns its name. Call inside a transaction."""
+    row = conn.execute("SELECT name, user_id FROM view_links WHERE id = ?", (link_id,)).fetchone()
+    if row is None:
+        return None
+    conn.execute("UPDATE view_links SET revoked = 1 WHERE id = ?", (link_id,))
+    conn.execute("UPDATE users SET active = 0 WHERE id = ?", (row["user_id"],))
+    conn.execute("DELETE FROM sessions WHERE user_id = ?", (row["user_id"],))
+    return row["name"]
