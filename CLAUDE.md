@@ -89,6 +89,7 @@ Output format is picked from the `--output` extension: `.csv` (default `output.c
 
 ### 3. Comment Traversal Logic
 - Identify the comment sorting mode on page load. By default, Facebook sorts by "Most relevant". Script must interact with the dropdown to switch to "All comments" to capture hidden or low-engagement replies.
+- Reels and videos (`/share/v/…` lands on `/reel/<video id>`): comments live in a side panel opened by the "Comment, N comments" button, and the wheel must stay over that panel (over the video it jumps to the next reel). Their comments are keyed by the story's `post_id`, not the video id; `video_story_info()` reads it.
 - Recursively trigger expanding elements:
   - "View more comments" (parent-level pagination).
   - "X replies" or "View previous replies" (child/nested thread pagination).

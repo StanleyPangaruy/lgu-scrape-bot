@@ -1,6 +1,6 @@
 from agent.runner import build_payload
 from scraper.interceptor import Comment, SharedPost
-from scraper.post_info import PostInfo, canonical_url, comment_post_id, pick_main_story
+from scraper.post_info import PostInfo, canonical_url, comment_post_id, pick_main_story, video_id, video_story_info
 from server.limits import COMMENT_TEXT_LIMITS
 from tests.conftest import comment_id
 
@@ -34,6 +34,37 @@ def test_pick_main_story_none_when_unsure():
 
 def test_canonical_url_drops_tracking():
     assert canonical_url("https://www.facebook.com/x/posts/pfbid0?rdid=abc#c") == "https://www.facebook.com/x/posts/pfbid0"
+
+
+def test_canonical_url_keeps_watch_video_id():
+    assert canonical_url("https://www.facebook.com/watch/?v=123456789&rdid=x") == "https://www.facebook.com/watch/?v=123456789"
+
+
+def test_video_id():
+    assert video_id("https://www.facebook.com/reel/4699121727076889") == "4699121727076889"
+    assert video_id("https://www.facebook.com/lgu/videos/1234567/") == "1234567"
+    assert video_id("https://www.facebook.com/watch/?v=1234567") == "1234567"
+    assert video_id("https://www.facebook.com/lgu/posts/1234567") is None
+    assert video_id("https://www.facebook.com/share/v/1dhhJYTYov/") is None
+
+
+def test_video_story_info_merges_the_reel_story_fragments():
+    """Shaped like a reel page: the video names its story, whose fields come in pieces."""
+    sid = "UzpfSTE6Vks6NDY5OQ=="
+    docs = [
+        {"require": [{"video": {"id": "4699", "creation_story": {"id": sid, "tracking": "{}"}}}]},
+        {"node": {"id": sid, "post_id": "3246606045730319", "feedback": {"total_comment_count": 147}}},
+        {"node": {"id": sid, "creation_time": 1792655919, "message": {"text": "Municipal ordinance"},
+                  "actors": [{"id": "100011", "name": "Jonathan", "url": "https://www.facebook.com/jonathan"}]}},
+        # The next reel in the feed must not leak in.
+        {"video": {"id": "5555", "creation_story": {"id": "OTHER"}}},
+        {"node": {"id": "OTHER", "post_id": "999", "message": {"text": "another reel"}}},
+    ]
+    info = video_story_info(docs, "4699", "https://www.facebook.com/reel/4699")
+    assert (info.post_id, info.page_name, info.page_url, info.created_time, info.comment_count, info.text) == (
+        "3246606045730319", "Jonathan", "https://www.facebook.com/jonathan", 1792655919, 147, "Municipal ordinance",
+    )
+    assert video_story_info(docs, "1234", "https://www.facebook.com/reel/1234") is None
 
 
 def test_comment_post_id():

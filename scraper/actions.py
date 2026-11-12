@@ -15,6 +15,7 @@ from playwright.async_api import Locator, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from scraper.interceptor import CommentInterceptor, ShareInterceptor
+from scraper.post_info import video_id
 
 SORT_BUTTON = re.compile(r"^(Most relevant|Newest|All comments|Top comments)$", re.I)
 ALL_COMMENTS_ITEM = re.compile(r"^All comments", re.I)
@@ -27,6 +28,9 @@ MORE_COMMENTS = re.compile(r"^(View|See) (\d+ )?(more|previous) comments", re.I)
 MORE_REPLIES = re.compile(
     r"(\b\d+\s+repl(y|ies)\b|^View (all|previous|\d+ more|more) repl)", re.I
 )
+
+# A reel's or video's comment counter, "Comment, 147 comments"; it opens the comment panel.
+VIDEO_COMMENTS_BUTTON = re.compile(r"^Comment, [\d.,]+\s*[KM]? comments?$", re.I)
 
 # The post's "..." menu and its "Share history" item (lists everyone who shared it).
 POST_MENU_BUTTON = re.compile(r"^(Actions for this post|More options for this post)", re.I)
@@ -107,6 +111,29 @@ async def switch_to_all_comments(page: Page) -> str | None:
     return None
 
 
+async def open_video_comments(page: Page) -> bool:
+    """Reels and videos show their comments in a side panel that opens from the
+    "Comment, N comments" button. Returns True once the panel is open."""
+    sort_button = page.get_by_role("button", name=SORT_BUTTON).first
+    if await sort_button.is_visible():
+        return True
+    # The first counter is the open reel's; later ones belong to the next reels in the feed.
+    button = page.get_by_role("button", name=VIDEO_COMMENTS_BUTTON).first
+    try:
+        await button.wait_for(state="visible", timeout=10000)
+    except PlaywrightTimeoutError:
+        print("The video's comment button was not found.")
+        return False
+    if not await _click(button):
+        return False
+    try:
+        await sort_button.wait_for(state="visible", timeout=10000)
+    except PlaywrightTimeoutError:
+        print("The video's comment panel did not open.")
+        return False
+    return True
+
+
 async def _click_expanders(page: Page, pattern: re.Pattern, interceptor: CommentInterceptor) -> int:
     clicked = 0
     for locator in await page.get_by_role("button", name=pattern).all():
@@ -144,6 +171,14 @@ async def _hover_scroll_area(page: Page) -> None:
             await page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
             return
     viewport = page.viewport_size
+    if video_id(page.url) is not None and viewport:
+        # Reels: the wheel over the video jumps to the next reel, so stay over
+        # the comment panel, found by its sort button.
+        box = await page.get_by_role("button", name=SORT_BUTTON).first.bounding_box()
+        if box:
+            await page.mouse.move(box["x"] + box["width"] / 2, viewport["height"] / 2)
+            return
+        raise RuntimeError("Lost the video's comment panel; stopped so the reel feed is not scrolled.")
     if viewport:
         await page.mouse.move(viewport["width"] / 2, viewport["height"] / 2)
 

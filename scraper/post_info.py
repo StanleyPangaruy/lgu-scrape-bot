@@ -8,7 +8,7 @@ import base64
 import binascii
 import re
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from scraper.interceptor import SharedPost, iter_json_documents, iter_story_nodes, parse_shared_post
@@ -17,8 +17,10 @@ if TYPE_CHECKING:
     from playwright.async_api import Page
 
 # Query parameters that identify a post; every other one (rdid, __cft__, …) is tracking.
-POST_QUERY_KEYS = ("story_fbid", "id", "fbid")
+POST_QUERY_KEYS = ("story_fbid", "id", "fbid", "v")
 NUMERIC_POST_ID = re.compile(r"/(?:posts|permalink|videos|photos?)/(\d{6,})")
+# Reels and videos: /reel/<video id>, /<page>/videos/<video id>, /watch/?v=<video id>.
+VIDEO_PATH_ID = re.compile(r"/(?:reel|videos)/(\d{6,})")
 
 
 @dataclass
@@ -55,6 +57,74 @@ def comment_post_id(comment_id: str) -> str | None:
         return None
     post_id = text[len("comment:"):].split("_", 1)[0]
     return post_id if post_id.isdigit() else None
+
+
+def video_id(url: str) -> str | None:
+    """The video id of a reel or video page, else None."""
+    parts = urlsplit(url)
+    match = VIDEO_PATH_ID.search(parts.path)
+    if match:
+        return match.group(1)
+    if parts.path.rstrip("/").endswith("/watch"):
+        v = (parse_qs(parts.query).get("v") or [None])[0]
+        return v if v and v.isdigit() else None
+    return None
+
+
+def _walk_dicts(node: Any) -> Iterator[dict]:
+    stack = [node]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            yield cur
+            stack.extend(cur.values())
+        elif isinstance(cur, list):
+            stack.extend(cur)
+
+
+def video_story_info(docs: list[Any], video: str, url: str) -> PostInfo | None:
+    """A reel's or video's own post, from the page's JSON.
+
+    The video node names its story (`creation_story.id`); that story's fields
+    (post id, caption, date, author, comment count) are spread over several
+    partial copies, so they are merged. Comments on the video are keyed by the
+    story's `post_id`, not by the video id in the URL.
+    """
+    dicts = [d for doc in docs for d in _walk_dicts(doc)]
+    story_id = next(
+        (
+            d["creation_story"]["id"]
+            for d in dicts
+            if d.get("id") == video and isinstance(d.get("creation_story"), dict)
+            and isinstance(d["creation_story"].get("id"), str)
+        ),
+        None,
+    )
+    if story_id is None:
+        return None
+    info = PostInfo(url=url)
+    for d in dicts:
+        if d.get("id") != story_id:
+            continue
+        if info.post_id is None and str(d.get("post_id") or "").isdigit():
+            info.post_id = str(d["post_id"])
+        if info.created_time is None and isinstance(d.get("creation_time"), int):
+            info.created_time = d["creation_time"]
+        message = d.get("message")
+        if info.text is None and isinstance(message, dict) and isinstance(message.get("text"), str):
+            info.text = message["text"]
+        actors = d.get("actors")
+        if info.page_name is None and isinstance(actors, list) and actors and isinstance(actors[0], dict):
+            actor = actors[0]
+            info.page_id = actor.get("id")
+            info.page_name = actor.get("name")
+            info.page_url = actor.get("url") or actor.get("profile_url")
+        feedback = d.get("feedback")
+        if info.comment_count is None and isinstance(feedback, dict):
+            count = feedback.get("total_comment_count")
+            if isinstance(count, int):
+                info.comment_count = count
+    return info if info.post_id else None
 
 
 def _path_slug(url: str) -> str:
@@ -98,6 +168,13 @@ async def read_post_info(page: Page) -> PostInfo:
     blobs = await page.eval_on_selector_all(
         'script[type="application/json"]', "els => els.map(e => e.textContent)"
     )
+    video = video_id(final_url)
+    if video is not None:
+        docs = [doc for blob in blobs if blob and video in blob for doc in iter_json_documents(blob)]
+        found = video_story_info(docs, video, final_url)
+        if found is not None:
+            return found
+
     stories: dict[str, SharedPost] = {}
     for blob in blobs:
         if not blob or '"Story"' not in blob:

@@ -6,8 +6,9 @@ from typing import Awaitable, Callable
 
 from playwright.async_api import Page
 
-from scraper.actions import expand_all, jitter, switch_to_all_comments
+from scraper.actions import expand_all, jitter, open_video_comments, switch_to_all_comments
 from scraper.interceptor import Comment, CommentInterceptor
+from scraper.post_info import video_id
 
 
 async def open_post(page: Page, url: str) -> None:
@@ -37,6 +38,11 @@ async def collect_comments(
         if after_open is not None:
             await after_open(page)
         await interceptor.ingest_page_scripts(page)
+        if video_id(page.url) is not None:
+            # Share links of videos land on /reel/…; comments are in a side panel.
+            if not await open_video_comments(page):
+                raise RuntimeError("Could not open the video's comments.")
+            await jitter()
 
         order = await switch_to_all_comments(page)
         if order:
