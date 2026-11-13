@@ -283,3 +283,17 @@ def test_change_own_password(browsers, app):
 
 def test_unknown_post_is_404(browsers):
     assert browsers["staff"].get("/posts/9999").status_code == 404
+
+
+def test_nothing_but_static_files_may_be_cached(browsers, conn, agent):
+    """A proxy in front of the site (Cloudflare) must never keep a copy of a page."""
+    pid = seed_post(conn, ["hello"])
+    admin = browsers["admin"]
+    for path in ("/posts", f"/posts/{pid}", f"/posts/{pid}/export.xlsx", "/people", "/settings", "/no-such-page"):
+        assert admin.get(path).headers.get("cache-control") == "no-store", path
+    with TestClient(admin.client.app) as anon:
+        assert anon.get("/login").headers.get("cache-control") == "no-store"
+    assert agent.post("/api/agent/claim", json={}).headers.get("cache-control") == "no-store"
+    assert admin.post("/logout").headers.get("cache-control") == "no-store"
+    static = admin.get("/static/app.css")
+    assert static.status_code == 200 and static.headers.get("cache-control") != "no-store"

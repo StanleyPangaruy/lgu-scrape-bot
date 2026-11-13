@@ -142,6 +142,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response = await call_next(request)
         for name, value in SECURITY_HEADERS.items():
             response.headers.setdefault(name, value)
+        if not request.url.path.startswith("/static/"):
+            # Pages, exports and the API hold residents' comments and accounts: never
+            # let a proxy in front of the site (Cloudflare) or the browser keep a copy.
+            # Static files are versioned (?v=) and safe to cache.
+            response.headers.setdefault("Cache-Control", "no-store")
         if settings.secure_cookies:
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
         return response

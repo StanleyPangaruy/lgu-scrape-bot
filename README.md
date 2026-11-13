@@ -266,6 +266,14 @@ pip install -e ".[dev]"
 python -m pytest
 ```
 
+## Putting the website online on a cPanel server (GoDaddy VPS + Cloudflare)
+
+To run it on a WHM/cPanel server (AlmaLinux 9) that also hosts other websites, at a subdomain such as
+`monitor.livelopez.gov.ph` behind Cloudflare, follow **[deploy/cpanel.md](deploy/cpanel.md)**. It
+covers the subdomain, the Cloudflare origin certificate, `deploy/setup-cpanel.sh`, Cloudflare rules
+and moving the data from Lightsail. Every page is sent with `Cache-Control: no-store`, so Cloudflare
+never stores residents' comments.
+
 ## Putting the website online (AWS Lightsail)
 
 The website runs on a small Ubuntu server; the scraper agent stays on the admin laptop. `deploy/setup.sh` installs everything: the website as the `lcm` service (starts on boot, restarts if it stops), and Caddy in front for HTTPS. The address is a free `<server-ip>.sslip.io` name until you get a real domain.

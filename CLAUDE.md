@@ -134,7 +134,7 @@ lgu-scrape-bot/
 │   ├── templates/, static/
 │   └── cli.py           # python -m server …
 ├── agent/runner.py      # python -m agent: claim job → scrape → upload
-├── deploy/             # setup.sh (Ubuntu + systemd + Caddy), update.sh, restore.sh for AWS Lightsail
+├── deploy/             # setup.sh (Ubuntu + Caddy, Lightsail); setup-cpanel.sh + cpanel.md (AlmaLinux cPanel VPS: Apache forwards one subdomain to 127.0.0.1:LCM_PORT, Cloudflare in front); update.sh, restore.sh for both
 ├── tests/               # pytest
 ├── data/                # monitor.db (gitignored: residents' comments)
 ├── screenshots/         # Comment screenshots (gitignored: names and photos)
