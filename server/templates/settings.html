@@ -117,7 +117,7 @@
       {% else %}Runs a minute after the website starts, then every hour.{% endif %}
       {% if upkeep and upkeep.last_error %}<br><span class="danger-text small">Last problem ({{ upkeep.last_error_at | ago }}): {{ upkeep.last_error }}</span>{% endif %}</dd>
     <dt>Backups</dt><dd>
-      A copy of the database every day; the newest {{ backup_keep }} are kept in <code>{{ backup_dir }}</code>.
+      A copy of the database every month (30 days); the newest {{ backup_keep }} are kept in <code>{{ backup_dir }}</code>.
       {% if backups %}
       <ul class="backup-list">
         {% for b in backups[:5] %}<li>{{ b.made_at | fmt_time }} <span class="muted small">({{ '%.1f' | format(b.size / 1048576) }} MB)</span></li>{% endfor %}

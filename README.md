@@ -228,7 +228,7 @@ python -m server compare-supportive positive_*.csv --label
 
 - **Adding posts:** only the admin adds and re-checks posts. Staff send the admin the Facebook link.
 - **One year:** comments posted more than a year ago are deleted automatically, checked every hour. Their replies, labels and corrections are deleted with them, and a post goes once it has no comments left. The admin can delete a post sooner with **Delete post** on its page. Settings → **Data and backups** shows the oldest comment and what the next cleanup will remove.
-- **Backups:** the website saves a copy of the database every day and keeps the newest 14 in `data/backups`. **Back up now** in Settings makes one immediately.
+- **Backups:** the website saves a copy of the database every month (30 days after the newest one) and keeps the newest 12 (a year) in `data/backups`. **Back up now** in Settings makes one immediately.
 
 A backup on the same disk is lost if the computer dies. Point backups at a folder that is copied elsewhere, such as OneDrive or a USB drive (PowerShell, then open a new terminal and restart the website):
 
@@ -255,9 +255,9 @@ python -m server restore data/backups/monitor-2026-11-07-020000.db --yes
 | `LCM_SENTIMENT_EFFORT` | `low` | Effort setting (`low`, `medium`, `high`) |
 | `LCM_AI_WORKER` | `1` | `0` turns the background analysis off |
 | `LCM_RETENTION_DAYS` | `365` | Delete comments older than this; `0` keeps everything |
-| `LCM_BACKUP_DIR` | `data/backups` | Where daily backups go |
-| `LCM_BACKUP_KEEP` | `14` | How many backups to keep |
-| `LCM_MAINTENANCE` | `1` | `0` turns off the hourly cleanup and daily backup |
+| `LCM_BACKUP_DIR` | `data/backups` | Where monthly backups go |
+| `LCM_BACKUP_KEEP` | `12` | How many backups to keep |
+| `LCM_MAINTENANCE` | `1` | `0` turns off the hourly cleanup and monthly backup |
 
 ### Tests
 
@@ -289,7 +289,7 @@ The website runs on a small Ubuntu server; the scraper agent stays on the admin 
    Accounts, passwords, keywords, labels and the agent token all come along. To start empty instead: `sudo lcm create-user admin --name "Your Name" --role admin`.
 6. **Point the agent at the server** on the admin laptop: `python -m agent --server https://<address> --token <TOKEN>`. Stop using the copy on the admin computer, so the data lives in one place.
 7. **Mayor's link**: create a new one in Settings → View-only links (the old one had the local address).
-8. **Off-server copies**: in Lightsail, *Snapshots* → turn on **automatic snapshots** (a few cents per GB a month). The website's own daily backups stay on the server's disk.
+8. **Off-server copies**: in Lightsail, *Snapshots* → turn on **automatic snapshots** (a few cents per GB a month). The website's own monthly backups stay on the server's disk.
 
 Day to day on the server:
 

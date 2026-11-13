@@ -36,8 +36,8 @@ class Settings:
     retention_days: int = 365
     # Backups: where they go (default data/backups) and how many to keep.
     backups: Path | None = None
-    backup_keep: int = 14
-    # Run hourly cleanup and the daily backup inside the website (off in tests).
+    backup_keep: int = 12  # a year of monthly backups
+    # Run hourly cleanup and the monthly backup inside the website (off in tests).
     maintenance: bool = True
 
     @property
@@ -63,6 +63,6 @@ class Settings:
             ai_worker=_flag("LCM_AI_WORKER", True),
             retention_days=int(os.environ.get("LCM_RETENTION_DAYS", "365")),
             backups=Path(os.environ["LCM_BACKUP_DIR"]) if os.environ.get("LCM_BACKUP_DIR") else None,
-            backup_keep=max(1, int(os.environ.get("LCM_BACKUP_KEEP", "14"))),
+            backup_keep=max(1, int(os.environ.get("LCM_BACKUP_KEEP", "12"))),
             maintenance=_flag("LCM_MAINTENANCE", True),
         )

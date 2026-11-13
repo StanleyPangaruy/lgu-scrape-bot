@@ -137,3 +137,22 @@ def test_cleanup_command(conn, settings, monkeypatch, capsys):
     assert "Run again with --yes" in capsys.readouterr().out
     assert cli(["cleanup", "--yes"]) == 0
     assert ids(conn) == {comment_id(POST, 2)}
+
+
+def test_automatic_backups_are_monthly(conn, settings):
+    import os
+
+    add_post(conn, [(1, 1, None)])
+    worker = maintenance.MaintenanceWorker(settings)
+    worker.run_once(conn)  # no backup yet: make the first one
+    # Named as if made long ago, so a new backup this second cannot reuse its name.
+    first = maintenance.list_backups(settings)[0].path.rename(settings.backup_dir / "monitor-2000-01-01-000000.db")
+
+    def age_first_backup(days):
+        stamp = now() - days * DAY
+        os.utime(first, (stamp, stamp))
+
+    for days, expected in ((1, 1), (29, 1), (30, 2)):
+        age_first_backup(days)
+        worker.run_once(conn)
+        assert len(maintenance.list_backups(settings)) == expected, days

@@ -1,7 +1,7 @@
 """Keeping the data tidy: delete comments after the retention period, and back up the database.
 
 A background thread runs both inside the website: retention every hour (it is a
-quick query), a backup when the newest one is a day old. The same functions back
+quick query), a backup when the newest one is a month (30 days) old. The same functions back
 the admin's "Back up now" button and `python -m server backup / restore`.
 """
 
@@ -21,7 +21,7 @@ from server.db import audit, connect, now, transaction
 log = logging.getLogger("lcm.maintenance")
 
 BACKUP_GLOB = "monitor-*.db"
-BACKUP_EVERY = 24 * 3600
+BACKUP_EVERY = 30 * 24 * 3600  # monthly
 TICK_SECONDS = 3600
 FIRST_TICK_SECONDS = 60
 
