@@ -1,7 +1,12 @@
-# Moving the website to the GoDaddy VPS (cPanel/WHM + Cloudflare)
+# The website on the GoDaddy VPS (cPanel/WHM + Cloudflare)
 
-The website moves from AWS Lightsail to the GoDaddy VPS that hosts livelopez.gov.ph
-(AlmaLinux 9, WHM/cPanel), at **https://monitor.livelopez.gov.ph**, behind Cloudflare.
+The website runs on the GoDaddy VPS that hosts livelopez.gov.ph (AlmaLinux 9, WHM/cPanel), at
+**https://monitor.livelopez.gov.ph**, behind Cloudflare. It was set up this way on 2026-11-13 (moved
+from AWS Lightsail). This guide is how to set it up again from scratch, for example on a new server.
+
+`SERVER_IP` below is the VPS's public IP address, shown in GoDaddy (Hosting → the server) and at the
+top of WHM. It is deliberately not written here: this repository is public, and with the address
+anyone could reach the server directly instead of through Cloudflare.
 
 How it fits on that server:
 
@@ -82,7 +87,7 @@ It ends with `Done. ... answers (HTTP 200)`. Send the last lines to whoever is h
 
 Cloudflare → livelopez.gov.ph:
 
-1. **DNS** → **Records** → **Add record**: Type `A`, Name `monitor`, IPv4 `184.168.121.22`,
+1. **DNS** → **Records** → **Add record**: Type `A`, Name `monitor`, IPv4 `SERVER_IP`,
    Proxy status **Proxied** (orange cloud) → **Save**.
 2. **SSL/TLS** → **Overview**: note the current mode.
    - If it is already **Full (strict)**, skip to 3.
@@ -100,52 +105,45 @@ Cloudflare → livelopez.gov.ph:
 Open **https://monitor.livelopez.gov.ph** in a browser: the sign-in page should load with a valid
 padlock (DNS can take a few minutes).
 
-## 7. Move the data from Lightsail
+## 7. Bring the data from the old server
+
+Skip this for an empty start: `lcm create-user admin --name "Your Name" --role admin`.
 
 1. On the laptop: stop the agent (**Ctrl+C**).
-2. On Lightsail (browser SSH):
+2. On the old server: make a fresh backup and stop the website there, so nothing new is saved after it:
    ```bash
    sudo lcm backup
    sudo systemctl stop lcm
-   ls -t /var/lib/lcm/backups | head -1
+   sudo ls -t /var/lib/lcm/backups | head -1
    ```
-   The website on Lightsail is now stopped, so nothing new is saved there.
-3. Copy that file to the GoDaddy server. The simplest way is through your laptop:
-   - Lightsail → the instance → **Connect** → download the default SSH key, then on the laptop:
-     ```bash
-     scp -i LightsailDefaultKey.pem ubuntu@<lightsail-ip>:/var/lib/lcm/backups/monitor-....db .
-     ```
-     (If permission is denied, first run on Lightsail:
-     `sudo cp /var/lib/lcm/backups/monitor-....db /home/ubuntu/ && sudo chown ubuntu /home/ubuntu/monitor-....db`
-     and copy from `/home/ubuntu/` instead.)
-   - Upload it to the GoDaddy server: with root SSH, `scp monitor-....db root@184.168.121.22:/root/`.
-     Otherwise use the account's cPanel → **File Manager** → **Upload** (it lands in
-     `/home/CPANEL_USER/`), then in WHM Terminal: `mv /home/CPANEL_USER/monitor-....db /root/`.
-4. On the GoDaddy server:
+3. Copy that backup to the laptop. If the old server's SSH user cannot read `/var/lib/lcm`, copy it to
+   that user's home folder first (`sudo cp … ~/ && sudo chown $USER ~/monitor-....db`), then on the
+   laptop: `scp -i <ssh key> <user>@<old server>:monitor-....db .`
+4. Upload it to this server: with root SSH, `scp monitor-....db root@SERVER_IP:/root/`. Otherwise the
+   account's cPanel → **File Manager** → **Upload** (it lands in `/home/CPANEL_USER/`, not
+   `public_html`), then in WHM Terminal: `mv /home/CPANEL_USER/monitor-....db /root/`.
+5. Load it:
    ```bash
-   sudo bash /opt/lcm/deploy/restore.sh /root/monitor-....db
+   bash /opt/lcm/deploy/restore.sh /root/monitor-....db
    ```
-   It stops the website, backs up the (empty) current database, loads the file and starts again.
-   Accounts, posts, comments, AI labels, corrections and agent tokens all come along: nobody needs a
-   new password or token.
-5. Delete the copies on the laptop and in `/root/` once the site works: they contain residents' comments.
+   It stops the website, backs up the current database, loads the file and starts again. Accounts,
+   posts, comments, AI labels, corrections and agent tokens all come along: nobody needs a new
+   password or token.
+6. Delete the copies on the laptop, in `/root/` and on the old server once the site works: they
+   contain residents' comments. Delete the old server too (and any static IP or snapshots it has,
+   which are billed on their own).
 
 ## 8. Check, then switch the agent
 
 1. Sign in at https://monitor.livelopez.gov.ph, open a post, export it to Excel.
-2. On the laptop, start the agent with the new address:
+2. On the laptop, start the agent with this address:
    ```bash
    .\.venv\Scripts\python -m agent --server https://monitor.livelopez.gov.ph --token YOUR_TOKEN
    ```
-   (If you saved `LCM_SERVER` as an environment variable, change it to the new address.)
+   (If you saved `LCM_SERVER` as an environment variable, set it to this address.)
 3. Click **Re-check** on one post and watch it collect and upload.
-4. **Settings → View-only links**: create a new link for the mayor and send it (the old links
-   pointed at the Lightsail address).
-
-## 9. After a week
-
-If everything works, delete the Lightsail instance (Lightsail → the instance → **Delete**) and its
-snapshots. Until then it is the fallback: `sudo systemctl start lcm` there brings the old site back.
+4. If the address changed: **Settings → View-only links**, create a new link for the mayor and send
+   it (view links contain the website's address).
 
 ---
 
@@ -171,7 +169,7 @@ now and then.
 | Cloudflare **521/522** | Apache is not answering: WHM → **Restart Services** → HTTP Server (Apache). |
 | Cloudflare **502** / "Bad gateway" from Apache | The website service is down: `systemctl status lcm` and `journalctl -u lcm -n 50`. |
 | **403** page from Apache (not the website's own pages) | Usually ModSecurity blocking a form or an agent upload. WHM → **ModSecurity Tools** → **Hits List** shows the rule. To turn it off for this subdomain only, add the line `<IfModule security2_module>SecRuleEngine Off</IfModule>` to `/etc/apache2/conf.d/userdata/ssl/2_4/CPANEL_USER/monitor.livelopez.gov.ph/lcm.conf`, then run `/usr/local/cpanel/scripts/rebuildhttpdconf && /usr/local/cpanel/scripts/restartsrv_httpd`. The website has its own sign-in, CSRF checks and upload limits. |
-| Agent: uploads fail with **403** or a Cloudflare challenge page | Bot Fight Mode (free plan) cannot be skipped for one address. Either turn it off (Security → Bots), or add a second DNS record `monitor-api` → `184.168.121.22` with **DNS only** (grey cloud), a second domain/certificate for it in cPanel, and point the agent at that. |
+| Agent: uploads fail with **403** or a Cloudflare challenge page | Bot Fight Mode (free plan) cannot be skipped for one address. Either turn it off (Security → Bots), or add a second DNS record `monitor-api` → `SERVER_IP` with **DNS only** (grey cloud), a second domain/certificate for it in cPanel, and point the agent at that. |
 | The main site misbehaves after step 5 | Remove the forwarding: `rm -f /etc/apache2/conf.d/userdata/*/2_4/CPANEL_USER/monitor.livelopez.gov.ph/lcm.conf`, then `/usr/local/cpanel/scripts/rebuildhttpdconf && /usr/local/cpanel/scripts/restartsrv_httpd`. The files only apply to the monitor subdomain, so this is unlikely. |
 
 To remove the website from the server entirely: remove the forwarding as above,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Set up the LGU Comment Monitor on a fresh Ubuntu 24.04 server (AWS Lightsail).
+# Set up the LGU Comment Monitor on a fresh Ubuntu 24.04 server (for example AWS Lightsail). The live server uses setup-cpanel.sh.
 #
 #   sudo bash setup.sh
 #

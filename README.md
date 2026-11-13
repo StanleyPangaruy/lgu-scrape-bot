@@ -266,17 +266,31 @@ pip install -e ".[dev]"
 python -m pytest
 ```
 
-## Putting the website online on a cPanel server (GoDaddy VPS + Cloudflare)
+## The website online (GoDaddy VPS + Cloudflare)
 
-To run it on a WHM/cPanel server (AlmaLinux 9) that also hosts other websites, at a subdomain such as
-`monitor.livelopez.gov.ph` behind Cloudflare, follow **[deploy/cpanel.md](deploy/cpanel.md)**. It
-covers the subdomain, the Cloudflare origin certificate, `deploy/setup-cpanel.sh`, Cloudflare rules
-and moving the data from Lightsail. Every page is sent with `Cache-Control: no-store`, so Cloudflare
-never stores residents' comments.
+The website runs at **https://monitor.livelopez.gov.ph** on the LGU's GoDaddy VPS (WHM/cPanel, AlmaLinux 9), the same server as livelopez.gov.ph, with Cloudflare in front. The scraper agent stays on the admin laptop and uploads to that address.
 
-## Putting the website online (AWS Lightsail)
+- The website is the `lcm` service, listening on the server itself only (`127.0.0.1`). cPanel's Apache forwards just the `monitor` subdomain to it; the other sites on the server are not affected.
+- Code in `/opt/lcm`, data (database and backups) in `/var/lib/lcm`, settings and the Anthropic API key in `/etc/lcm/env`.
+- Cloudflare: a proxied `monitor` record, a Cloudflare origin certificate installed in cPanel, and two rules for that hostname only: SSL **Full (strict)** and **Bypass cache**. Every page is also sent with `Cache-Control: no-store`, so Cloudflare never stores residents' comments.
 
-The website runs on a small Ubuntu server; the scraper agent stays on the admin laptop. `deploy/setup.sh` installs everything: the website as the `lcm` service (starts on boot, restarts if it stops), and Caddy in front for HTTPS. The address is a free `<server-ip>.sslip.io` name until you get a real domain.
+Setting it up from scratch (or on another cPanel server), and moving data from an old server: **[deploy/cpanel.md](deploy/cpanel.md)** and `deploy/setup-cpanel.sh`.
+
+Day to day, as root in WHM → **Terminal**:
+
+| Task | Command |
+| --- | --- |
+| Install the newest code from GitHub | `bash /opt/lcm/deploy/update.sh` |
+| Admin commands | `lcm backup`, `lcm cleanup`, `lcm create-user …` |
+| Load a backup | `bash /opt/lcm/deploy/restore.sh FILE` |
+| Change settings (API key, …) | `nano /etc/lcm/env`, then `systemctl restart lcm` |
+| See what happened | `journalctl -u lcm -n 100` |
+
+Automatic backups are monthly in `/var/lib/lcm/backups` (newest 12 kept), on the same server; the VPS's own WHM backups cover the server as a whole.
+
+## Alternative: a plain Ubuntu server (AWS Lightsail)
+
+Until November 2026 the website ran this way (that server has been deleted). It still works for a new, separate server. The website runs on a small Ubuntu server; the scraper agent stays on the admin laptop. `deploy/setup.sh` installs everything: the website as the `lcm` service (starts on boot, restarts if it stops), and Caddy in front for HTTPS. The address is a free `<server-ip>.sslip.io` name until you get a real domain.
 
 1. **Create the server** at lightsail.aws.amazon.com: *Create instance* → region **Singapore**, *Linux/Unix* → *OS Only* → **Ubuntu 24.04 LTS**, the 1 GB (or larger) plan, name it `lcm`.
 2. **Give it a fixed address**: *Networking* → *Create static IP* → attach it to `lcm`. Do this before step 4: the website address is made from this IP.
@@ -299,7 +313,7 @@ The website runs on a small Ubuntu server; the scraper agent stays on the admin 
 7. **Mayor's link**: create a new one in Settings → View-only links (the old one had the local address).
 8. **Off-server copies**: in Lightsail, *Snapshots* → turn on **automatic snapshots** (a few cents per GB a month). The website's own monthly backups stay on the server's disk.
 
-Day to day on the server:
+Day to day on such a server:
 
 | Task | Command |
 | --- | --- |

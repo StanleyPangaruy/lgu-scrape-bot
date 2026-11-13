@@ -1,4 +1,4 @@
-"""Settings, read from environment variables so the same code runs locally and on AWS."""
+"""Settings, read from environment variables so the same code runs locally and on the server."""
 
 from __future__ import annotations
 
